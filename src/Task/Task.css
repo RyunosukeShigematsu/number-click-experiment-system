@@ -1,0 +1,88 @@
+/* src/Task/Task.css */
+
+.task-root {
+  height: 100dvh;
+  overflow: hidden; /* 念押し */
+  background: #ffffff;
+  padding: 20px 24px 24px;
+  box-sizing: border-box;
+}
+
+/* 上部に情報（NEXTやベスト等）を載せるための余白 */
+.top-reserve {
+  height: 72px; /* 今は仮。上にUI増えたらここ調整 */
+}
+
+/* メイン（左） + 右の情報領域（予約） */
+.layout {
+  height: calc(100dvh - 72px - 20px - 24px); /* top-reserve と padding 分をざっくり差し引き */
+  display: grid;
+  grid-template-columns: 1fr 280px; /* 右側の情報エリア幅（仮） */
+  gap: 20px;
+  align-items: center;
+  justify-items: start;
+  max-width: 980px;
+  margin: 0 auto;
+}
+
+/* 左側：数字グリッド領域（少し左寄りにする） */
+.grid-wrap {
+  width: min(720px, 68vw); /* 右の予約を確保しつつ、グリッドは大きめ */
+  justify-self: start;
+}
+
+/* 右側：情報表示予定の予約領域 */
+.right-reserve {
+  width: 280px;
+  height: min(520px, 70vh);
+  /* 今は“空き”が分かるように薄く。不要なら消してOK */
+  border: 1px dashed rgba(0, 0, 0, 0.08);
+  border-radius: 16px;
+  background: rgba(0, 0, 0, 0.02);
+}
+
+/* グリッド */
+.number-grid {
+  display: grid;
+  gap: 10px;
+}
+
+/* マス */
+.cell {
+  appearance: none;
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  background: #fafafa;
+  border-radius: 14px;
+
+  /* ★ 必ず正方形 */
+  width: 100%;
+  aspect-ratio: 1 / 1;
+
+  /* ★ 正方形の中で数字を中央に */
+  padding: 0;
+  display: grid;
+  place-items: center;
+
+  /* 文字 */
+  font-size: 18px;
+  font-weight: 600;
+  color: rgba(0, 0, 0, 0.85);
+
+  cursor: pointer;
+  user-select: none;
+
+  transition: transform 80ms ease, background 120ms ease, border-color 120ms ease;
+}
+
+.cell:hover {
+  background: #f3f3f3;
+}
+
+.cell:active {
+  transform: scale(0.98);
+}
+
+.cell:focus-visible {
+  outline: 3px solid rgba(0, 0, 0, 0.18);
+  outline-offset: 2px;
+}
