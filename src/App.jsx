@@ -1,9 +1,5 @@
-function App() {
-  return (
-    <div>
-      <h1>m1_project</h1>
-    </div>
-  );
-}
+import Task from "./Task/Task";
 
-export default App;
+export default function App() {
+  return <Task />;
+}
