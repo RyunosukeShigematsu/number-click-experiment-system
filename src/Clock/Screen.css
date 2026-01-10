@@ -1,0 +1,47 @@
+/* src/Clock/Screen.css */
+.stimulus-screen {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+
+  background: rgba(255, 255, 255, 0.95);
+
+  /* ★ 画面全体を基準にする */
+  display: block;
+  padding: 0;
+}
+
+/* ===== 表示領域：常に画面のど真ん中 ===== */
+.stimulus-stage {
+  position: absolute;
+  inset: 0;
+
+  display: grid;
+  place-items: center;
+}
+
+/* ===== p5表示サイズ固定 ===== */
+.stimulus-center-wrap {
+  width: var(--stimulus-w);
+  height: var(--stimulus-h);
+  padding: 0;
+  margin: 0;
+  box-sizing: border-box;
+}
+
+.stimulus-center-wrap canvas {
+  display: block;
+}
+
+/* ===== ボタンなど操作系：下中央 ===== */
+.stimulus-controls {
+  position: absolute;
+  bottom: 200px;
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+.stimulus-controls button {
+  font-size: 16px;
+  padding: 8px 16px;
+}
