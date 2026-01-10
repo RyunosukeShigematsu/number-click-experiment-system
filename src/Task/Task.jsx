@@ -58,37 +58,44 @@ export default function Task() {
     // ===== NEXT（次に押す番号） =====
     const [nextNumber, setNextNumber] = useState(1);
 
+    const [isCompleted, setIsCompleted] = useState(false);
+
     // ★ 追加：正解／ミスの一時フィードバック
     const [feedback, setFeedback] = useState(null);
     // { num: number, type: "correct" | "wrong" }
 
     // リセット：NEXTを1に戻して、配置もランダムにし直す
     const resetTrial = useCallback(() => {
+        setIsCompleted(false);
         setNextNumber(1);
         setShuffleKey((k) => k + 1);
     }, []);
 
+
     // クリック処理：正解のときだけ進める／全部押し終えたらリセット
     const handleClick = useCallback(
         (num) => {
+            // 完了後は押せない（進行しない）
+            if (isCompleted) return;
+
             if (num === nextNumber) {
-                // 正解
+                // 正解フィードバック
                 setFeedback({ num, type: "correct" });
 
+                // 50達成したら「完了」にする（次へはボタン）
                 if (nextNumber >= TOTAL) {
-                    resetTrial();
+                    setIsCompleted(true);
                 } else {
                     setNextNumber((n) => n + 1);
                 }
             } else {
-                // ミス
+                // ミスフィードバック
                 setFeedback({ num, type: "wrong" });
             }
 
-            // ★ 一瞬で消す（アニメーション用）
             window.setTimeout(() => setFeedback(null), 220);
         },
-        [nextNumber, TOTAL, resetTrial]
+        [isCompleted, nextNumber, TOTAL]
     );
 
 
@@ -116,10 +123,10 @@ export default function Task() {
                                 key={`${shuffleKey}-${num}`}
                                 type="button"
                                 className={`cell ${feedback?.num === num
-                                        ? feedback.type === "correct"
-                                            ? "cell--correct"
-                                            : "cell--wrong"
-                                        : ""
+                                    ? feedback.type === "correct"
+                                        ? "cell--correct"
+                                        : "cell--wrong"
+                                    : ""
                                     }`}
                                 onClick={() => handleClick(num)}
                             >
@@ -127,6 +134,18 @@ export default function Task() {
                                 {num}
                             </button>
                         ))}
+                    </div>
+
+                    <div className="next-trial-slot">
+                        {isCompleted && (
+                            <button
+                                type="button"
+                                className="next-trial-button"
+                                onClick={resetTrial}
+                            >
+                                次のトライアルへ
+                            </button>
+                        )}
                     </div>
                 </div>
 

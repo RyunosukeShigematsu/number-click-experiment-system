@@ -219,3 +219,51 @@
 .cell--wrong {
     animation: shake 220ms ease-in-out;
 }
+
+.next-trial-wrap {
+  margin-top: 14px;
+  display: flex;
+  justify-content: center;
+}
+
+/* 完了ボタンの“予約枠” - ここがあるからレイアウトが動かない */
+.next-trial-slot {
+  margin-top: 14px;
+  height: 52px;                 /* ★ これが固定の肝（ボタン分） */
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+
+.next-trial-button {
+  appearance: none;
+  border: 1px solid rgba(0,0,0,0.18);
+  background: #f0f0f0;          /* ★ グレー */
+  color: rgba(0,0,0,0.78);
+  border-radius: 14px;
+  padding: 12px 18px;
+
+  font-size: 15px;
+  font-weight: 700;
+
+  cursor: pointer;
+  user-select: none;
+
+  box-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.10),
+    0 8px 20px rgba(0, 0, 0, 0.08);
+
+  transition: transform 80ms ease, box-shadow 160ms ease, background 120ms ease;
+}
+
+.next-trial-button:hover {
+  background: #e7e7e7;
+  box-shadow:
+    0 2px 4px rgba(0, 0, 0, 0.12),
+    0 12px 26px rgba(0, 0, 0, 0.10);
+}
+
+.next-trial-button:active {
+  transform: translateY(1px);
+}
