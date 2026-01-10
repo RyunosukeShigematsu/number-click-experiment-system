@@ -1,88 +1,221 @@
 /* src/Task/Task.css */
 
+
 .task-root {
-  height: 100dvh;
-  overflow: hidden; /* 念押し */
-  background: #ffffff;
-  padding: 20px 24px 24px;
-  box-sizing: border-box;
+    height: 100dvh;
+    overflow: hidden;
+    /* 念押し */
+    background: #ffffff;
+    padding: 20px 24px 24px;
+    box-sizing: border-box;
 }
 
-/* 上部に情報（NEXTやベスト等）を載せるための余白 */
+/* 上部：layout と同じ2カラム構造にして「左カラムの真上」に固定 */
 .top-reserve {
-  height: 72px; /* 今は仮。上にUI増えたらここ調整 */
+    height: 90px;
+    /* 少し増やして“真上”っぽく（好みで72〜110） */
+    max-width: 980px;
+    margin: 0 auto;
+
+    display: grid;
+    grid-template-columns: 1fr 280px;
+    /* layoutと合わせる */
+    gap: 20px;
+    align-items: end;
 }
+
+/* 左カラム（= grid-wrap の上） */
+.top-left {
+    width: min(720px, 68vw);
+    /* grid-wrap と合わせる */
+    justify-self: start;
+
+    display: flex;
+    justify-content: center;
+    /* 左カラムの中で中央寄せ */
+}
+
+/* 右カラムは予約（空でOK） */
+.top-right {
+    width: 280px;
+}
+
+/* NEXTは小さく */
+.next-indicator {
+    font-size: 20px;
+    font-weight: 600;
+    color: rgba(0, 0, 0, 0.45);
+    letter-spacing: 0.04em;
+    text-align: center;
+    transform: translateY(100px);
+    /* ★ ここで下げる（10〜24で調整） */
+}
+
+/* 数字だけドン！ */
+.next-number {
+    display: block;
+    margin-top: 4px;
+    font-size: 60px;
+    /* ← 大きくした（48〜64で調整） */
+    font-weight: 800;
+    line-height: 1;
+    color: rgba(0, 0, 0, 0.88);
+}
+
 
 /* メイン（左） + 右の情報領域（予約） */
 .layout {
-  height: calc(100dvh - 72px - 20px - 24px); /* top-reserve と padding 分をざっくり差し引き */
-  display: grid;
-  grid-template-columns: 1fr 280px; /* 右側の情報エリア幅（仮） */
-  gap: 20px;
-  align-items: center;
-  justify-items: start;
-  max-width: 980px;
-  margin: 0 auto;
+    height: calc(100dvh - 72px - 20px - 24px);
+    /* top-reserve と padding 分をざっくり差し引き */
+    display: grid;
+    grid-template-columns: 1fr 280px;
+    /* 右側の情報エリア幅（仮） */
+    gap: 20px;
+    align-items: center;
+    justify-items: start;
+    max-width: 980px;
+    margin: 0 auto;
 }
 
 /* 左側：数字グリッド領域（少し左寄りにする） */
 .grid-wrap {
-  width: min(720px, 68vw); /* 右の予約を確保しつつ、グリッドは大きめ */
-  justify-self: start;
+    width: min(720px, 68vw);
+    /* 右の予約を確保しつつ、グリッドは大きめ */
+    justify-self: start;
 }
 
 /* 右側：情報表示予定の予約領域 */
 .right-reserve {
-  width: 280px;
-  height: min(520px, 70vh);
-  /* 今は“空き”が分かるように薄く。不要なら消してOK */
-  border: 1px dashed rgba(0, 0, 0, 0.08);
-  border-radius: 16px;
-  background: rgba(0, 0, 0, 0.02);
+    width: 280px;
+    height: min(520px, 70vh);
+    /* 今は“空き”が分かるように薄く。不要なら消してOK */
+    border: 1px dashed rgba(0, 0, 0, 0.08);
+    border-radius: 16px;
+    background: rgba(0, 0, 0, 0.02);
 }
 
 /* グリッド */
 .number-grid {
-  display: grid;
-  gap: 10px;
+    display: grid;
+    gap: 10px;
 }
 
 /* マス */
 .cell {
-  appearance: none;
-  border: 1px solid rgba(0, 0, 0, 0.12);
-  background: #fafafa;
-  border-radius: 14px;
+    appearance: none;
+    border: 1px solid rgba(0, 0, 0, 0.12);
+    background: #fafafa;
+    border-radius: 14px;
 
-  /* ★ 必ず正方形 */
-  width: 100%;
-  aspect-ratio: 1 / 1;
+    /* ★ 必ず正方形 */
+    width: 100%;
+    aspect-ratio: 1 / 1;
 
-  /* ★ 正方形の中で数字を中央に */
-  padding: 0;
-  display: grid;
-  place-items: center;
+    /* ★ 正方形の中で数字を中央に */
+    padding: 0;
+    display: grid;
+    place-items: center;
 
-  /* 文字 */
-  font-size: 18px;
-  font-weight: 600;
-  color: rgba(0, 0, 0, 0.85);
+    /* 文字 */
+    font-size: 18px;
+    font-weight: 600;
+    color: rgba(0, 0, 0, 0.85);
 
-  cursor: pointer;
-  user-select: none;
+    cursor: pointer;
+    user-select: none;
 
-  transition: transform 80ms ease, background 120ms ease, border-color 120ms ease;
+    /* ★ 常時：うっすらボタン影 */
+    box-shadow:
+        0 1px 2px rgba(0, 0, 0, 0.10),
+        0 6px 18px rgba(0, 0, 0, 0.06);
+
+    transition: transform 80ms ease, background 120ms ease, border-color 120ms ease;
 }
 
 .cell:hover {
-  background: #f3f3f3;
+    background: #f3f3f3;
+    box-shadow:
+        0 2px 4px rgba(0, 0, 0, 0.10),
+        0 10px 24px rgba(0, 0, 0, 0.08);
 }
 
 .cell:active {
-  transform: scale(0.98);
+    transform: scale(0.98);
 }
 
 .cell:focus-visible {
-  outline: 3px solid rgba(0, 0, 0, 0.18);
-  outline-offset: 2px;
+    outline: 3px solid rgba(0, 0, 0, 0.18);
+    outline-offset: 2px;
+}
+
+/* 正解：ポン（色なし） */
+@keyframes correctPressGlow {
+  0% {
+    transform: scale(1);
+    box-shadow:
+      0 1px 2px rgba(0, 0, 0, 0.10),
+      0 6px 18px rgba(0, 0, 0, 0.06);
+  }
+
+  /* 押し込み＆光る */
+  30% {
+    transform: scale(0.88);
+    box-shadow:
+      0 2px 6px rgba(0, 0, 0, 0.12),
+      0 14px 30px rgba(0, 0, 0, 0.12),
+      inset 0 0 0 999px rgba(255, 255, 255, 0.10); /* ★ “濃淡”っぽさ（ふちは消えにくい） */
+  }
+
+  /* 余韻（少し戻って少し残す） */
+  55% {
+    transform: scale(0.92);
+    box-shadow:
+      0 2px 6px rgba(0, 0, 0, 0.11),
+      0 12px 26px rgba(0, 0, 0, 0.10),
+      inset 0 0 0 999px rgba(255, 255, 255, 0.08);
+  }
+
+  /* 戻る */
+  100% {
+    transform: scale(1);
+    box-shadow:
+      0 1px 2px rgba(0, 0, 0, 0.10),
+      0 6px 18px rgba(0, 0, 0, 0.06);
+  }
+}
+
+.cell--correct {
+  animation: correctPressGlow 320ms cubic-bezier(.2,.8,.2,1);
+}
+
+
+/* ミス：左右ブルブル（あなたの採用案） */
+@keyframes shake {
+    0% {
+        transform: translateX(0);
+    }
+
+    20% {
+        transform: translateX(-6px);
+    }
+
+    40% {
+        transform: translateX(6px);
+    }
+
+    60% {
+        transform: translateX(-4px);
+    }
+
+    80% {
+        transform: translateX(4px);
+    }
+
+    100% {
+        transform: translateX(0);
+    }
+}
+
+.cell--wrong {
+    animation: shake 220ms ease-in-out;
 }
