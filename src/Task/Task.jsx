@@ -16,8 +16,8 @@ function shuffle(arr) {
 }
 
 export default function Task() {
-  const TOTAL = 50;
-  const COLS = 10;
+  const TOTAL = 3;
+  const COLS = 3;
 
   // ===== スクロール完全禁止（Task表示中だけ） =====
   useEffect(() => {
@@ -58,6 +58,9 @@ export default function Task() {
   // ===== NEXT（次に押す番号） =====
   const [nextNumber, setNextNumber] = useState(1);
 
+  // ===== 開始状態 =====
+  const [isStarted, setIsStarted] = useState(false);
+
   // ===== 完了状態 =====
   const [isCompleted, setIsCompleted] = useState(false);
 
@@ -82,7 +85,7 @@ export default function Task() {
         return next.slice(0, 5);
       });
     }
-
+    setIsStarted(false); // ★次トライアルは開始待ちに戻す  
     setIsCompleted(false);
     setNextNumber(1);
     setShuffleKey((k) => k + 1);
@@ -95,19 +98,19 @@ export default function Task() {
 
   // ===== トライアル開始（この画面になった瞬間）=====
   useEffect(() => {
-    // すでに開始済みなら何もしない
+    if (!isStarted) return;          // ★開始ボタン押すまで開始しない
     if (trialStartAt != null) return;
-
-    // 念のため「次が1のとき」だけ開始にする（安全）
     if (nextNumber !== 1) return;
 
     setTrialStartAt(Date.now());
-  }, [trialStartAt, nextNumber]);
+  }, [isStarted, trialStartAt, nextNumber]);
+
 
 
   // クリック処理：正解のときだけ進める／全部押し終えたらリセット
   const handleClick = useCallback(
     (num) => {
+      if (!isStarted) return; // ★開始前は押せない
       // 完了後は押せない（進行しない）
       if (isCompleted) return;
 
@@ -163,10 +166,38 @@ export default function Task() {
       <div className="top-reserve">
         <div className="top-left">
           <div className="next-indicator">
-            NEXT:
-            <span className="next-number">{nextNumber}</span>
+            {!isStarted ? (
+              <button
+                type="button"
+                className="start-on-next"
+                onClick={() => {
+                  // ★開始
+                  setIsStarted(true);
+
+                  // 念のためトライアル初期化（開始時の状態を固定）
+                  setIsCompleted(false);
+                  setFeedback(null);
+                  setNextNumber(1);
+
+                  setTrialStartAt(null); // useEffectが入れる
+                  setElapsedMs(null);
+                  setMissCount(0);
+
+                  // もし「開始押した瞬間に配置を確定したい」ならこれもON
+                  // setShuffleKey((k) => k + 1);
+                }}
+              >
+                開始
+              </button>
+            ) : (
+              <>
+                NEXT:
+                <span className="next-number">{nextNumber}</span>
+              </>
+            )}
           </div>
         </div>
+
         <div className="top-right" />
       </div>
 
@@ -176,22 +207,26 @@ export default function Task() {
             className="number-grid"
             style={{ gridTemplateColumns: `repeat(${COLS}, 1fr)` }}
           >
-            {numbers.map((num) => (
-              <button
-                key={`${shuffleKey}-${num}`}
-                type="button"
-                className={`cell ${feedback?.num === num
-                  ? feedback.type === "correct"
-                    ? "cell--correct"
-                    : "cell--wrong"
-                  : ""
-                  }`}
-                onClick={() => handleClick(num)}
-              >
 
-                {num}
-              </button>
-            ))}
+            {numbers.map((num, i) => {
+              const r = Math.floor(i / COLS);
+              const c = i % COLS;
+              const d = r + c; // ★左上から対角線に広がるキー
+
+              return (
+                <button
+                  key={`${shuffleKey}-${num}`}
+                  type="button"
+                  style={{ "--d": d }} // ★ここがポイント
+                  className={`cell ${isCompleted ? "cell--wave" : ""}`}
+                  onClick={() => handleClick(num)}
+                >
+                  {isStarted ? num : ""}
+                </button>
+              );
+            })}
+
+
           </div>
 
           <div className="next-trial-slot">

@@ -40,6 +40,41 @@
     width: 280px;
 }
 
+/* 開始ボタン：next-number（数字の位置）に出す */
+.start-on-next {
+    appearance: none;
+    border: 1px solid rgba(0, 0, 0, 0.18);
+    background: #f0f0f0;
+    color: rgba(0, 0, 0, 0.78);
+    border-radius: 14px;
+
+    /* ★数字と同じ場所に見せる */
+    margin-top: 4px;
+    /* ← next-number の margin-top と合わせる */
+    padding: 12px 24px;
+
+    font-size: 22px;
+    font-weight: 900;
+    letter-spacing: 0.06em;
+
+    cursor: pointer;
+    user-select: none;
+
+    box-shadow:
+        0 1px 2px rgba(0, 0, 0, 0.10),
+        0 8px 20px rgba(0, 0, 0, 0.08);
+
+    transition: box-shadow 160ms ease, background 120ms ease;
+}
+
+.start-on-next:hover {
+    background: #e7e7e7;
+    box-shadow:
+        0 2px 4px rgba(0, 0, 0, 0.12),
+        0 12px 26px rgba(0, 0, 0, 0.10);
+}
+
+
 /* NEXTは小さく */
 .next-indicator {
     font-size: 20px;
@@ -49,6 +84,11 @@
     text-align: center;
     transform: translateY(100px);
     /* ★ ここで下げる（10〜24で調整） */
+
+    /* ★追加：開始ボタンも同じ位置に置くため */
+    display: flex;
+    flex-direction: column;
+    align-items: center;
 }
 
 /* 数字だけドン！ */
@@ -69,8 +109,10 @@
     /* top-reserve と padding 分をざっくり差し引き */
     display: grid;
     grid-template-columns: 1fr 280px;
-    column-gap: 80px;   /* ← ここを増やす（32〜40で調整） */
-    row-gap: 20px;      /* ← 縦は今まで通り */
+    column-gap: 80px;
+    /* ← ここを増やす（32〜40で調整） */
+    row-gap: 20px;
+    /* ← 縦は今まで通り */
     align-items: center;
     justify-items: start;
     max-width: 980px;
@@ -137,6 +179,21 @@
 .cell:focus-visible {
     outline: 3px solid rgba(0, 0, 0, 0.18);
     outline-offset: 2px;
+}
+
+.cell--blank {
+    color: transparent;
+}
+
+.cell:disabled {
+    cursor: default;
+}
+
+.cell:disabled:hover {
+    background: #fafafa;
+    box-shadow:
+        0 1px 2px rgba(0, 0, 0, 0.10),
+        0 6px 18px rgba(0, 0, 0, 0.06);
 }
 
 /* 正解：ポン（色なし） */
@@ -225,7 +282,7 @@
     /* ★ これが固定の肝（ボタン分） */
     display: flex;
     justify-content: center;
-    align-items: center;
+    align-items: flex-end;
 }
 
 
@@ -249,6 +306,8 @@
         0 8px 20px rgba(0, 0, 0, 0.08);
 
     transition: transform 80ms ease, box-shadow 160ms ease, background 120ms ease;
+    /* ★ これを追加：表示位置を下げる（ここが本題） */
+    transform: translateY(26px);
 }
 
 .next-trial-button:hover {
@@ -256,10 +315,6 @@
     box-shadow:
         0 2px 4px rgba(0, 0, 0, 0.12),
         0 12px 26px rgba(0, 0, 0, 0.10);
-}
-
-.next-trial-button:active {
-    transform: translateY(1px);
 }
 
 /* 右側：情報表示予定の予約領域 */
@@ -290,7 +345,8 @@
     transform: translateX(-10px);
     margin-bottom: 26px;
     /* 少し余白アップ */
-    position: relative; /* ★ 疑似要素の基準 */
+    position: relative;
+    /* ★ 疑似要素の基準 */
 }
 
 .metrics-title {
@@ -385,32 +441,67 @@
 }
 
 .metrics-bestMissValue {
-    font-weight: 900;                 /* 数字だけ太く */
-    color: rgba(0, 0, 0, 0.85);        /* ラベルより濃く */
+    font-weight: 900;
+    /* 数字だけ太く */
+    color: rgba(0, 0, 0, 0.85);
+    /* ラベルより濃く */
 }
 
 /* ミス回数はかなり小さく */
 .metrics-bestMiss {
-    display: flex;                 /* ← これが重要 */
+    display: flex;
+    /* ← これが重要 */
     align-items: baseline;
-    gap: 5px;                      /* ← ここを 5 に */
-    
+    gap: 5px;
+    /* ← ここを 5 に */
+
     font-size: 18px;
-    font-weight: 600;              /* 650は避ける */
+    font-weight: 600;
+    /* 650は避ける */
     color: rgba(0, 0, 0, 0.55);
     margin-top: 6px;
 }
 
 /* ===== レイアウトを動かさない区切り線 ===== */
-.metrics-block:not(:last-child)::after{
-  content: "";
-  position: absolute;
+.metrics-block:not(:last-child)::after {
+    content: "";
+    position: absolute;
 
-  left: 0;
-  right: 0;
-  bottom: -9px;            /* ← 見た目だけ下にずらす */
-  height: 1px;
+    left: 0;
+    right: 0;
+    bottom: -9px;
+    /* ← 見た目だけ下にずらす */
+    height: 1px;
 
-  background: rgba(0,0,0,0.2);
-  pointer-events: none;    /* 念のため */
+    background: rgba(0, 0, 0, 0.2);
+    pointer-events: none;
+    /* 念のため */
+}
+
+@keyframes clearWave {
+  0% {
+    background: #fafafa;
+    box-shadow:
+      0 1px 2px rgba(0,0,0,0.10),
+      0 6px 18px rgba(0,0,0,0.06);
+  }
+  45% {
+    /* ★ “濃淡”だけ濃くする（色味は足さない） */
+    background: #e9e9e9;
+    box-shadow:
+      0 2px 6px rgba(0,0,0,0.12),
+      0 14px 30px rgba(0,0,0,0.10);
+  }
+  100% {
+    background: #fafafa;
+    box-shadow:
+      0 1px 2px rgba(0,0,0,0.10),
+      0 6px 18px rgba(0,0,0,0.06);
+  }
+}
+
+/* 完了時だけ wave（左上→右下の順に遅延） */
+.cell--wave {
+  animation: clearWave 360ms ease-in-out both;
+  animation-delay: calc(var(--d) * 55ms); /* 45〜70msで調整 */
 }
