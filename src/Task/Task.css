@@ -40,6 +40,41 @@
     width: 280px;
 }
 
+/* 開始ボタン：next-number（数字の位置）に出す */
+.start-on-next {
+    appearance: none;
+    border: 1px solid rgba(0, 0, 0, 0.18);
+    background: #f0f0f0;
+    color: rgba(0, 0, 0, 0.78);
+    border-radius: 14px;
+
+    /* ★数字と同じ場所に見せる */
+    margin-top: 4px;
+    /* ← next-number の margin-top と合わせる */
+    padding: 12px 24px;
+
+    font-size: 22px;
+    font-weight: 900;
+    letter-spacing: 0.06em;
+
+    cursor: pointer;
+    user-select: none;
+
+    box-shadow:
+        0 1px 2px rgba(0, 0, 0, 0.10),
+        0 8px 20px rgba(0, 0, 0, 0.08);
+
+    transition: box-shadow 160ms ease, background 120ms ease;
+}
+
+.start-on-next:hover {
+    background: #e7e7e7;
+    box-shadow:
+        0 2px 4px rgba(0, 0, 0, 0.12),
+        0 12px 26px rgba(0, 0, 0, 0.10);
+}
+
+
 /* NEXTは小さく */
 .next-indicator {
     font-size: 20px;
@@ -49,6 +84,11 @@
     text-align: center;
     transform: translateY(100px);
     /* ★ ここで下げる（10〜24で調整） */
+
+    /* ★追加：開始ボタンも同じ位置に置くため */
+    display: flex;
+    flex-direction: column;
+    align-items: center;
 }
 
 /* 数字だけドン！ */
@@ -69,8 +109,10 @@
     /* top-reserve と padding 分をざっくり差し引き */
     display: grid;
     grid-template-columns: 1fr 280px;
-    /* 右側の情報エリア幅（仮） */
-    gap: 20px;
+    column-gap: 80px;
+    /* ← ここを増やす（32〜40で調整） */
+    row-gap: 20px;
+    /* ← 縦は今まで通り */
     align-items: center;
     justify-items: start;
     max-width: 980px;
@@ -84,15 +126,6 @@
     justify-self: start;
 }
 
-/* 右側：情報表示予定の予約領域 */
-.right-reserve {
-    width: 280px;
-    height: min(520px, 70vh);
-    /* 今は“空き”が分かるように薄く。不要なら消してOK */
-    border: 1px dashed rgba(0, 0, 0, 0.08);
-    border-radius: 16px;
-    background: rgba(0, 0, 0, 0.02);
-}
 
 /* グリッド */
 .number-grid {
@@ -148,44 +181,60 @@
     outline-offset: 2px;
 }
 
+.cell--blank {
+    color: transparent;
+}
+
+.cell:disabled {
+    cursor: default;
+}
+
+.cell:disabled:hover {
+    background: #fafafa;
+    box-shadow:
+        0 1px 2px rgba(0, 0, 0, 0.10),
+        0 6px 18px rgba(0, 0, 0, 0.06);
+}
+
 /* 正解：ポン（色なし） */
 @keyframes correctPressGlow {
-  0% {
-    transform: scale(1);
-    box-shadow:
-      0 1px 2px rgba(0, 0, 0, 0.10),
-      0 6px 18px rgba(0, 0, 0, 0.06);
-  }
+    0% {
+        transform: scale(1);
+        box-shadow:
+            0 1px 2px rgba(0, 0, 0, 0.10),
+            0 6px 18px rgba(0, 0, 0, 0.06);
+    }
 
-  /* 押し込み＆光る */
-  30% {
-    transform: scale(0.88);
-    box-shadow:
-      0 2px 6px rgba(0, 0, 0, 0.12),
-      0 14px 30px rgba(0, 0, 0, 0.12),
-      inset 0 0 0 999px rgba(255, 255, 255, 0.10); /* ★ “濃淡”っぽさ（ふちは消えにくい） */
-  }
+    /* 押し込み＆光る */
+    30% {
+        transform: scale(0.88);
+        box-shadow:
+            0 2px 6px rgba(0, 0, 0, 0.12),
+            0 14px 30px rgba(0, 0, 0, 0.12),
+            inset 0 0 0 999px rgba(255, 255, 255, 0.10);
+        /* ★ “濃淡”っぽさ（ふちは消えにくい） */
+    }
 
-  /* 余韻（少し戻って少し残す） */
-  55% {
-    transform: scale(0.92);
-    box-shadow:
-      0 2px 6px rgba(0, 0, 0, 0.11),
-      0 12px 26px rgba(0, 0, 0, 0.10),
-      inset 0 0 0 999px rgba(255, 255, 255, 0.08);
-  }
+    /* 余韻（少し戻って少し残す） */
+    55% {
+        transform: scale(0.92);
+        box-shadow:
+            0 2px 6px rgba(0, 0, 0, 0.11),
+            0 12px 26px rgba(0, 0, 0, 0.10),
+            inset 0 0 0 999px rgba(255, 255, 255, 0.08);
+    }
 
-  /* 戻る */
-  100% {
-    transform: scale(1);
-    box-shadow:
-      0 1px 2px rgba(0, 0, 0, 0.10),
-      0 6px 18px rgba(0, 0, 0, 0.06);
-  }
+    /* 戻る */
+    100% {
+        transform: scale(1);
+        box-shadow:
+            0 1px 2px rgba(0, 0, 0, 0.10),
+            0 6px 18px rgba(0, 0, 0, 0.06);
+    }
 }
 
 .cell--correct {
-  animation: correctPressGlow 320ms cubic-bezier(.2,.8,.2,1);
+    animation: correctPressGlow 320ms cubic-bezier(.2, .8, .2, 1);
 }
 
 
@@ -221,49 +270,238 @@
 }
 
 .next-trial-wrap {
-  margin-top: 14px;
-  display: flex;
-  justify-content: center;
+    margin-top: 14px;
+    display: flex;
+    justify-content: center;
 }
 
 /* 完了ボタンの“予約枠” - ここがあるからレイアウトが動かない */
 .next-trial-slot {
-  margin-top: 14px;
-  height: 52px;                 /* ★ これが固定の肝（ボタン分） */
-  display: flex;
-  justify-content: center;
-  align-items: center;
+    margin-top: 14px;
+    height: 52px;
+    /* ★ これが固定の肝（ボタン分） */
+    display: flex;
+    justify-content: center;
+    align-items: flex-end;
 }
 
 
 .next-trial-button {
-  appearance: none;
-  border: 1px solid rgba(0,0,0,0.18);
-  background: #f0f0f0;          /* ★ グレー */
-  color: rgba(0,0,0,0.78);
-  border-radius: 14px;
-  padding: 12px 18px;
+    appearance: none;
+    border: 1px solid rgba(0, 0, 0, 0.18);
+    background: #f0f0f0;
+    /* ★ グレー */
+    color: rgba(0, 0, 0, 0.78);
+    border-radius: 14px;
+    padding: 12px 18px;
 
-  font-size: 15px;
-  font-weight: 700;
+    font-size: 15px;
+    font-weight: 700;
 
-  cursor: pointer;
-  user-select: none;
+    cursor: pointer;
+    user-select: none;
 
-  box-shadow:
-    0 1px 2px rgba(0, 0, 0, 0.10),
-    0 8px 20px rgba(0, 0, 0, 0.08);
+    box-shadow:
+        0 1px 2px rgba(0, 0, 0, 0.10),
+        0 8px 20px rgba(0, 0, 0, 0.08);
 
-  transition: transform 80ms ease, box-shadow 160ms ease, background 120ms ease;
+    transition: transform 80ms ease, box-shadow 160ms ease, background 120ms ease;
+    /* ★ これを追加：表示位置を下げる（ここが本題） */
+    transform: translateY(26px);
 }
 
 .next-trial-button:hover {
-  background: #e7e7e7;
-  box-shadow:
-    0 2px 4px rgba(0, 0, 0, 0.12),
-    0 12px 26px rgba(0, 0, 0, 0.10);
+    background: #e7e7e7;
+    box-shadow:
+        0 2px 4px rgba(0, 0, 0, 0.12),
+        0 12px 26px rgba(0, 0, 0, 0.10);
 }
 
-.next-trial-button:active {
-  transform: translateY(1px);
+/* 右側：情報表示予定の予約領域 */
+.right-reserve {
+    width: 280px;
+    height: min(530px, 70vh);
+
+    border: 1px dashed rgba(0, 0, 0, 0.08);
+    border-radius: 16px;
+    background: rgba(0, 0, 0, 0.02);
+
+    box-sizing: border-box;
+    padding: 20px 18px;
+
+    display: flex;
+    flex-direction: column;
+    /* ★縦並びに戻す */
+    align-items: center;
+    /* ★全体を中央寄せ */
+    justify-content: flex-start;
+}
+
+/* 右カラム内のメトリクス表示用スタイル（文字を全体的に拡大） */
+
+.metrics-block {
+    width: 100%;
+    max-width: 220px;
+    transform: translateX(-10px);
+    margin-bottom: 26px;
+    /* 少し余白アップ */
+    position: relative;
+    /* ★ 疑似要素の基準 */
+}
+
+.metrics-title {
+    font-size: 22px;
+    /* ← 16 → 20 */
+    font-weight: 800;
+    color: rgba(0, 0, 0, 0.82);
+    margin-bottom: 12px;
+    letter-spacing: 0.02em;
+}
+
+.metrics-row {
+    font-size: 17px;
+    /* ← 15 → 17 */
+    font-weight: 500;
+    color: rgba(0, 0, 0, 0.68);
+    line-height: 1.9;
+    /* 行間ゆったり */
+}
+
+.metrics-history {
+    font-size: 16px;
+    /* ← 14 → 16 */
+    font-weight: 500;
+    color: rgba(0, 0, 0, 0.62);
+    line-height: 2.0;
+}
+
+/* ===== 今回の記録（基準より一段強い） ===== */
+
+.metrics-current .metrics-row {
+    display: flex;
+    align-items: baseline;
+    gap: 5px;
+    margin-top: 4px;
+}
+
+/* ラベル */
+.metrics-current .metrics-label {
+    font-size: 18px;
+    font-weight: 600;
+    color: rgba(0, 0, 0, 0.55);
+}
+
+/* 数字（時間・回数 共通） */
+.metrics-current .metrics-value {
+    font-size: 18px;
+    /* ← 少し大きく */
+    font-weight: 800;
+    /* ← 太く */
+    color: rgba(0, 0, 0, 0.85);
+    line-height: 1;
+}
+
+/* 単位 */
+.metrics-current .metrics-unit {
+    font-size: 18px;
+    font-weight: 600;
+    color: rgba(0, 0, 0, 0.55);
+}
+
+/* ===== ベスト記録：時間を「数字だけドン！」に（inline style撤去版） ===== */
+
+.metrics-bestTimeRow {
+    display: flex;
+    align-items: baseline;
+    gap: 5px;
+    margin-top: 6px;
+}
+
+/* 「時間」ラベルは控えめ */
+.metrics-bestTimeLabel {
+    font-size: 18px;
+    font-weight: 700;
+    color: rgba(0, 0, 0, 0.55);
+}
+
+/* 数字だけドン！ */
+.metrics-bestTimeValue {
+    font-size: 18px;
+    font-weight: 900;
+    color: #c77700;
+    line-height: 1;
+    letter-spacing: -0.02em;
+}
+
+/* 単位「秒」は小さめ */
+.metrics-bestTimeUnit {
+    font-size: 18px;
+    font-weight: 800;
+    color: rgba(0, 0, 0, 0.55);
+}
+
+.metrics-bestMissValue {
+    font-weight: 900;
+    /* 数字だけ太く */
+    color: rgba(0, 0, 0, 0.85);
+    /* ラベルより濃く */
+}
+
+/* ミス回数はかなり小さく */
+.metrics-bestMiss {
+    display: flex;
+    /* ← これが重要 */
+    align-items: baseline;
+    gap: 5px;
+    /* ← ここを 5 に */
+
+    font-size: 18px;
+    font-weight: 600;
+    /* 650は避ける */
+    color: rgba(0, 0, 0, 0.55);
+    margin-top: 6px;
+}
+
+/* ===== レイアウトを動かさない区切り線 ===== */
+.metrics-block:not(:last-child)::after {
+    content: "";
+    position: absolute;
+
+    left: 0;
+    right: 0;
+    bottom: -9px;
+    /* ← 見た目だけ下にずらす */
+    height: 1px;
+
+    background: rgba(0, 0, 0, 0.2);
+    pointer-events: none;
+    /* 念のため */
+}
+
+@keyframes clearWave {
+  0% {
+    background: #fafafa;
+    box-shadow:
+      0 1px 2px rgba(0,0,0,0.10),
+      0 6px 18px rgba(0,0,0,0.06);
+  }
+  45% {
+    /* ★ “濃淡”だけ濃くする（色味は足さない） */
+    background: #e9e9e9;
+    box-shadow:
+      0 2px 6px rgba(0,0,0,0.12),
+      0 14px 30px rgba(0,0,0,0.10);
+  }
+  100% {
+    background: #fafafa;
+    box-shadow:
+      0 1px 2px rgba(0,0,0,0.10),
+      0 6px 18px rgba(0,0,0,0.06);
+  }
+}
+
+/* 完了時だけ wave（左上→右下の順に遅延） */
+.cell--wave {
+  animation: clearWave 360ms ease-in-out both;
+  animation-delay: calc(var(--d) * 55ms); /* 45〜70msで調整 */
 }
