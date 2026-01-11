@@ -1,5 +1,5 @@
 // src/Task/Task.jsx
-import React, { useEffect, useMemo, useState, useCallback } from "react";
+import React, { useEffect, useMemo, useState, useCallback, useRef } from "react";
 import "./Task.css";
 
 function makeNumbers(n) {
@@ -16,8 +16,37 @@ function shuffle(arr) {
 }
 
 export default function Task() {
-  const TOTAL = 3;
-  const COLS = 3;
+  const TOTAL = 50;
+  const COLS = 10;
+  const GAP = 10;
+
+  const rows = Math.ceil(TOTAL / COLS);
+
+  // ★グリッドの“箱”を測る
+  const gridBoxRef = useRef(null);
+  const [cellPx, setCellPx] = useState(80); // 初期値は適当でOK
+
+  useEffect(() => {
+    const el = gridBoxRef.current;
+    if (!el) return;
+
+    const ro = new ResizeObserver(() => {
+      const boxW = el.clientWidth;
+      const boxH = el.clientHeight;
+
+      // gap 分を引いた上で 1セルの最大サイズを決める
+      const maxByW = (boxW - GAP * (COLS - 1)) / COLS;
+      const maxByH = (boxH - GAP * (rows - 1)) / rows;
+
+      // 小さすぎると押しにくいので下限・上限を付ける（好みで調整）
+      const next = Math.floor(Math.max(34, Math.min(maxByW, maxByH, 220)));
+
+      setCellPx(next);
+    });
+
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [COLS, rows, GAP]);
 
   // ===== スクロール完全禁止（Task表示中だけ） =====
   useEffect(() => {
@@ -192,7 +221,9 @@ export default function Task() {
             ) : (
               <>
                 NEXT:
-                <span className="next-number">{nextNumber}</span>
+                <span className="next-number">
+                  {isCompleted ? "Done" : nextNumber}
+                </span>
               </>
             )}
           </div>
@@ -203,30 +234,42 @@ export default function Task() {
 
       <div className="layout">
         <div className="grid-wrap">
-          <div
-            className="number-grid"
-            style={{ gridTemplateColumns: `repeat(${COLS}, 1fr)` }}
-          >
+          <div ref={gridBoxRef} className="grid-box">
+            <div
+              className="number-grid"
+              style={{
+                gridTemplateColumns: `repeat(${COLS}, ${cellPx}px)`,
+                gridTemplateRows: `repeat(${rows}, ${cellPx}px)`,
+                gap: `${GAP}px`,
+              }}
+            >
+              {numbers.map((num, i) => {
+                const r = Math.floor(i / COLS);
+                const c = i % COLS;
+                const d = r + c;
 
-            {numbers.map((num, i) => {
-              const r = Math.floor(i / COLS);
-              const c = i % COLS;
-              const d = r + c; // ★左上から対角線に広がるキー
+                const isCorrect = feedback?.num === num && feedback?.type === "correct";
+                const isWrong = feedback?.num === num && feedback?.type === "wrong";
 
-              return (
-                <button
-                  key={`${shuffleKey}-${num}`}
-                  type="button"
-                  style={{ "--d": d }} // ★ここがポイント
-                  className={`cell ${isCompleted ? "cell--wave" : ""}`}
-                  onClick={() => handleClick(num)}
-                >
-                  {isStarted ? num : ""}
-                </button>
-              );
-            })}
+                return (
+                  <button
+                    key={`${shuffleKey}-${num}`}
+                    type="button"
+                    style={{ "--d": d }}
+                    className={[
+                      "cell",
+                      isCompleted ? "cell--wave" : "",
+                      isCorrect ? "cell--correct" : "",
+                      isWrong ? "cell--wrong" : "",
+                    ].filter(Boolean).join(" ")}
+                    onClick={() => handleClick(num)}
+                  >
+                    {isStarted ? num : ""}
+                  </button>
+                );
+              })}
 
-
+            </div>
           </div>
 
           <div className="next-trial-slot">
