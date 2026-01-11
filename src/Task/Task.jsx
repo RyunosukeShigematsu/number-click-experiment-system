@@ -32,6 +32,58 @@ async function postTrigger({ roomId, trialIndex, triggerIndex, count }) {
   }
 }
 
+
+// ===== Beep (WebAudio) =====
+let _audioCtx = null;
+
+function ensureAudio() {
+  if (_audioCtx) return _audioCtx;
+  const Ctx = window.AudioContext || window.webkitAudioContext;
+  if (!Ctx) return null;
+  _audioCtx = new Ctx();
+  return _audioCtx;
+}
+
+// ユーザー操作のタイミングで呼んで音を許可（重要）
+async function unlockAudio() {
+  const ctx = ensureAudio();
+  if (!ctx) return;
+  if (ctx.state === "suspended") {
+    try { await ctx.resume(); } catch { }
+  }
+}
+
+function beep({ durationMs = 120, freq = 880, gain = 0.12 } = {}) {
+  const ctx = ensureAudio();
+  if (!ctx) return;
+
+  // 念のため（環境によっては必要）
+  if (ctx.state === "suspended") ctx.resume().catch(() => { });
+
+  const t0 = ctx.currentTime;
+  const osc = ctx.createOscillator();
+  const g = ctx.createGain();
+
+  osc.type = "sine";
+  osc.frequency.value = freq;
+
+  g.gain.setValueAtTime(0.0001, t0);
+  g.gain.exponentialRampToValueAtTime(gain, t0 + 0.01);
+  g.gain.exponentialRampToValueAtTime(0.0001, t0 + durationMs / 1000);
+
+  osc.connect(g);
+  g.connect(ctx.destination);
+
+  osc.start(t0);
+  osc.stop(t0 + durationMs / 1000 + 0.02);
+
+  osc.onended = () => {
+    try { osc.disconnect(); g.disconnect(); } catch { }
+  };
+}
+
+
+
 function makeNumbers(n) {
   return Array.from({ length: n }, (_, i) => i + 1);
 }
@@ -199,6 +251,12 @@ export default function Task() {
         // ★ trialIndex と num から、そのtrial内の triggerIndex を決定
         const tIdx = getTriggerIndex(trialIndex, num); // null or 0,1,2...
         if (tIdx != null) {
+          // ★ クリック時点で音を解錠（安全）
+          unlockAudio();
+          // ★ 1秒後にビープ
+          window.setTimeout(() => {
+            beep({ durationMs: 220, freq: 1000, gain: 0.35 });
+          }, 1500);
           // 非同期送信（UIは止めない）
           postTrigger({
             roomId: ROOM_ID,
@@ -261,6 +319,8 @@ export default function Task() {
                 type="button"
                 className="start-on-next"
                 onClick={() => {
+                  unlockAudio(); // ★これがないと1秒後の音が鳴らないことがある
+
                   // ★開始
                   setIsStarted(true);
 

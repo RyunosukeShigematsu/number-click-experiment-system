@@ -68,7 +68,7 @@ export default function StimulusScreen({
       if (next) {
         window.setTimeout(() => playOnce(next), 50);
       }
-    }, 3000);
+    }, 4000);
   }, [showStimulus]);
 
   // ★サーバから TRIGGER をポーリングして受信→playOnce()
