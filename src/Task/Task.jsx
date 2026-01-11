@@ -2,6 +2,30 @@
 import React, { useEffect, useMemo, useState, useCallback, useRef } from "react";
 import "./Task.css";
 
+const ROOM_ID = "dev-room";
+const TRIGGERS = [5, 10, 15]; // とりあえず
+const EVENTS_URL = "https://shigematsu.nkmr.io/m1_project/api/events.php";
+
+async function postTrigger({ roomId, count, triggerIndex }) {
+  try {
+    await fetch(EVENTS_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        roomId,
+        type: "TRIGGER",
+        from: "task",
+        count,
+        triggerIndex,
+        clientTs: Date.now(),
+      }),
+    });
+  } catch (e) {
+    // 実験中は落ちないのが大事：失敗してもUIは止めない
+    console.warn("postTrigger failed", e);
+  }
+}
+
 function makeNumbers(n) {
   return Array.from({ length: n }, (_, i) => i + 1);
 }
@@ -16,11 +40,13 @@ function shuffle(arr) {
 }
 
 export default function Task() {
-  const TOTAL = 50;
-  const COLS = 10;
+  const TOTAL = 20;
+  const COLS = 5;
   const GAP = 10;
 
   const rows = Math.ceil(TOTAL / COLS);
+
+  const [triggerIndex, setTriggerIndex] = useState(0); // 0-based
 
   // ★グリッドの“箱”を測る
   const gridBoxRef = useRef(null);
@@ -118,6 +144,7 @@ export default function Task() {
     setIsCompleted(false);
     setNextNumber(1);
     setShuffleKey((k) => k + 1);
+    setTriggerIndex(0);
 
     // ★計測リセット
     setTrialStartAt(null);  // 次のuseEffectでスタート時刻が入る
@@ -147,6 +174,16 @@ export default function Task() {
         // 正解フィードバック
         setFeedback({ num, type: "correct" });
 
+
+        if (TRIGGERS.includes(num)) {
+          setTriggerIndex((prev) => {
+            const next = prev + 1;
+            // 非同期送信：state更新とは独立に投げる
+            postTrigger({ roomId: ROOM_ID, count: num, triggerIndex: next });
+            return next;
+          });
+        }
+
         // 50達成したら「完了」にする（次へはボタン）
         if (nextNumber >= TOTAL) {
           setIsCompleted(true);
@@ -166,7 +203,7 @@ export default function Task() {
 
       window.setTimeout(() => setFeedback(null), 220);
     },
-    [isCompleted, nextNumber, TOTAL, trialStartAt]
+    [isStarted, isCompleted, nextNumber, TOTAL, trialStartAt]
   );
 
   // ===== ベスト記録（最速）=====
@@ -207,6 +244,7 @@ export default function Task() {
                   setIsCompleted(false);
                   setFeedback(null);
                   setNextNumber(1);
+                  setTriggerIndex(0);
 
                   setTrialStartAt(null); // useEffectが入れる
                   setElapsedMs(null);
