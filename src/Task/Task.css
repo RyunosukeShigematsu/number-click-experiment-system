@@ -8,6 +8,8 @@
     background: #ffffff;
     padding: 20px 24px 24px;
     box-sizing: border-box;
+    transform: translateY(-40px);
+    /* ← ここだけ調整 */
 }
 
 /* 上部：layout と同じ2カラム構造にして「左カラムの真上」に固定 */
@@ -121,6 +123,7 @@
 
 /* 左側：数字グリッド領域（少し左寄りにする） */
 .grid-wrap {
+    margin-top: 24px;
     width: min(720px, 68vw);
     /* 右の予約を確保しつつ、グリッドは大きめ */
     justify-self: start;
@@ -307,7 +310,7 @@
 
     transition: transform 80ms ease, box-shadow 160ms ease, background 120ms ease;
     /* ★ これを追加：表示位置を下げる（ここが本題） */
-    transform: translateY(26px);
+    transform: translateY(1px);
 }
 
 .next-trial-button:hover {
@@ -428,7 +431,7 @@
 .metrics-bestTimeValue {
     font-size: 18px;
     font-weight: 900;
-    color: #c77700;
+    color: rgba(0, 0, 0, 0.85);
     line-height: 1;
     letter-spacing: -0.02em;
 }
@@ -479,29 +482,50 @@
 }
 
 @keyframes clearWave {
-  0% {
-    background: #fafafa;
-    box-shadow:
-      0 1px 2px rgba(0,0,0,0.10),
-      0 6px 18px rgba(0,0,0,0.06);
-  }
-  45% {
-    /* ★ “濃淡”だけ濃くする（色味は足さない） */
-    background: #e9e9e9;
-    box-shadow:
-      0 2px 6px rgba(0,0,0,0.12),
-      0 14px 30px rgba(0,0,0,0.10);
-  }
-  100% {
-    background: #fafafa;
-    box-shadow:
-      0 1px 2px rgba(0,0,0,0.10),
-      0 6px 18px rgba(0,0,0,0.06);
-  }
+    0% {
+        background: #fafafa;
+        box-shadow:
+            0 1px 2px rgba(0, 0, 0, 0.10),
+            0 6px 18px rgba(0, 0, 0, 0.06);
+    }
+
+    45% {
+        /* ★ “濃淡”だけ濃くする（色味は足さない） */
+        background: #e9e9e9;
+        box-shadow:
+            0 2px 6px rgba(0, 0, 0, 0.12),
+            0 14px 30px rgba(0, 0, 0, 0.10);
+    }
+
+    100% {
+        background: #fafafa;
+        box-shadow:
+            0 1px 2px rgba(0, 0, 0, 0.10),
+            0 6px 18px rgba(0, 0, 0, 0.06);
+    }
 }
 
 /* 完了時だけ wave（左上→右下の順に遅延） */
 .cell--wave {
-  animation: clearWave 360ms ease-in-out both;
-  animation-delay: calc(var(--d) * 55ms); /* 45〜70msで調整 */
+    animation: clearWave 360ms ease-in-out both;
+    animation-delay: calc(var(--d) * 55ms);
+    /* 45〜70msで調整 */
+}
+
+/* グリッドの“箱” */
+.grid-box {
+    /* 幅は grid-wrap に従う（＝既存の width:min(720px, 68vw)） */
+    width: 100%;
+
+    background: rgba(0, 140, 255, 0.08);
+    /* ★縦が溢れないための肝：箱の最大高さを決める */
+    /* top-reserve + padding 等を考慮して「だいたいこのくらい」でも十分効く */
+    height: min(72vh, 400px);
+
+    /* 中央に寄せたいなら */
+    display: grid;
+    place-items: center;
+
+    /* 念のため */
+    overflow: hidden;
 }
