@@ -2,7 +2,7 @@
 import React, { useEffect, useRef, useState, useCallback } from "react";
 import "./Screen.css";
 import StimulusP5 from "./StimulusP5";
-import { STIMULI_MIXED } from "./stimuli";
+import { STIMULUS_PLAN } from "./stimulusPlan";
 
 const ROOM_ID = "dev-room";
 const POLL_MS = 250;
@@ -15,7 +15,7 @@ export default function StimulusScreen({
 }) {
   if (!visible) return null;
 
-  const [index, setIndex] = useState(0);
+  const [stimulus, setStimulus] = useState(["", "", "time", "normal"]);
 
   // ★ 追加：表示中フラグ（true=刺激表示、false=黒画面）
   const [showStimulus, setShowStimulus] = useState(false);
@@ -24,18 +24,16 @@ export default function StimulusScreen({
   const timerRef = useRef(null);
 
   // ★追加：未処理TRIGGERを溜める（表示中に来ても落とさない）
-  const pendingRef = useRef(0);
+  const pendingRef = useRef([]);
 
   // ★追加：サーバイベントの読み取り位置（重複防止）
   const lastIdRef = useRef(0);
 
-  // ✅ ガード：刺激配列が空なら何もしない
-  const len = STIMULI_MIXED?.length ?? 0;
-  if (len === 0) return null;
+  const totalTrials = STIMULUS_PLAN?.length ?? 0;
+  if (totalTrials === 0) return null;
 
-  // ✅ indexが範囲外にならないように
-  const safeIndex = ((index % len) + len) % len;
-  const [left, right, type, emphasize] = STIMULI_MIXED[safeIndex];
+  // stimulus が未設定のときは適当な初期値（黒画面なので何でもOK）
+  const [left, right, type, emphasize] = stimulus;
 
   const clearTimer = () => {
     if (timerRef.current) {
@@ -49,12 +47,15 @@ export default function StimulusScreen({
 
 
   // いまの「クリックで表示」を関数化：TRIGGERでも手動でも同じ挙動
-  const playOnce = useCallback(() => {
+  const playOnce = useCallback((nextStimulus) => {
     // 表示中ならキューに積む
     if (showStimulus) {
-      pendingRef.current += 1;
+      if (nextStimulus) pendingRef.current.push(nextStimulus);
       return;
     }
+
+    // 表示する刺激を確定
+    if (nextStimulus) setStimulus(nextStimulus);
 
     setShowStimulus(true);
 
@@ -63,19 +64,12 @@ export default function StimulusScreen({
       setShowStimulus(false);
       timerRef.current = null;
 
-      // ✅ 次の刺激へ（len を使う）
-      setIndex((i) => (i + 1) % len);
-
-      // もし待ちがあれば、次も続けて表示（0msだと描画が詰まる時があるので少し待つ）
-      if (pendingRef.current > 0) {
-        pendingRef.current -= 1;
-        window.setTimeout(() => {
-          // ここで showStimulus は false になってるはず
-          playOnce();
-        }, 50);
+      const next = pendingRef.current.shift();
+      if (next) {
+        window.setTimeout(() => playOnce(next), 50);
       }
     }, 3000);
-  }, [showStimulus, len]);
+  }, [showStimulus]);
 
   // ★サーバから TRIGGER をポーリングして受信→playOnce()
   useEffect(() => {
@@ -101,7 +95,15 @@ export default function StimulusScreen({
           }
 
           if (ev?.type === "TRIGGER") {
-            playOnce();
+            const t = Number(ev.trialIndex);
+            const k = Number(ev.triggerIndex);
+
+            const next = STIMULUS_PLAN?.[t]?.[k] ?? null;
+            if (next) {
+              playOnce(next);
+            } else {
+              console.warn("No stimulus for", { trialIndex: ev.trialIndex, triggerIndex: ev.triggerIndex, ev });
+            }
           }
         }
       } catch (e) {
@@ -131,22 +133,16 @@ export default function StimulusScreen({
     <div className="stimulus-screen" style={vars}>
       <div className="stimulus-stage">
         <div className="stimulus-center-wrap">
-          <StimulusP5
-            left={left}
-            right={right}
-            type={type}
-            emphasize={emphasize}
-            width={canvasWidth}
-            height={canvasHeight}
-            visible={showStimulus}
-          />
+            <StimulusP5
+              left={left}
+              right={right}
+              type={type}
+              emphasize={emphasize}
+              width={canvasWidth}
+              height={canvasHeight}
+              visible={showStimulus}
+            />
         </div>
-      </div>
-
-      <div className="stimulus-controls">
-        <button onClick={playOnce} disabled={false}>
-          {showStimulus ? "表示中…" : "表示（3秒）"}
-        </button>
       </div>
     </div>
   );

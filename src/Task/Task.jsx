@@ -1,12 +1,12 @@
 // src/Task/Task.jsx
 import React, { useEffect, useMemo, useState, useCallback, useRef } from "react";
 import "./Task.css";
+import { getTriggerIndex, TRIGGER_PLAN } from "./triggerPlan";
 
 const ROOM_ID = "dev-room";
-const TRIGGERS = [5, 10, 15]; // とりあえず
 const EVENTS_URL = "https://shigematsu.nkmr.io/m1_project/api/events.php";
 
-async function postTrigger({ roomId, count, triggerIndex }) {
+async function postTrigger({ roomId, trialIndex, triggerIndex, count }) {
   try {
     await fetch(EVENTS_URL, {
       method: "POST",
@@ -15,8 +15,14 @@ async function postTrigger({ roomId, count, triggerIndex }) {
         roomId,
         type: "TRIGGER",
         from: "task",
-        count,
-        triggerIndex,
+        // 研究用に必要な2つ（これが本命）
+        trialIndex,     // 0-based
+        triggerIndex,   // 0-based（trial内の何回目か）
+
+        // デバッグに便利なので残してOK（要らなければ後で消せる）
+        count,          // 押した番号
+        trialNo: trialIndex + 1,       // 1-based（読みやすさ用）
+        triggerNo: triggerIndex + 1,   // 1-based（読みやすさ用）
         clientTs: Date.now(),
       }),
     });
@@ -46,7 +52,7 @@ export default function Task() {
 
   const rows = Math.ceil(TOTAL / COLS);
 
-  const [triggerIndex, setTriggerIndex] = useState(0); // 0-based
+  const [trialIndex, setTrialIndex] = useState(0); // 0-based（何トライアル目か）
 
   // ★グリッドの“箱”を測る
   const gridBoxRef = useRef(null);
@@ -133,6 +139,7 @@ export default function Task() {
 
   // リセット：NEXTを1に戻して、配置もランダムにし直す
   const resetTrial = useCallback(() => {
+    const totalTrials = TRIGGER_PLAN.length;
     // ★ 完了済みなら、今回の記録を履歴の先頭へ（最大5件）
     if (isCompleted && elapsedMs != null) {
       setHistory((prev) => {
@@ -140,17 +147,32 @@ export default function Task() {
         return next.slice(0, 5);
       });
     }
+
+    // 次の trialIndex を決める
+    const nextTrial = trialIndex + 1;
+
+    // ★ 2トライアル終わったら一旦リロード
+    if (nextTrial >= totalTrials) {
+      // 念のため started/completed を戻す（体感のため）
+      setIsStarted(false);
+      setIsCompleted(false);
+      // すぐリロード
+      window.location.reload();
+      return;
+    }
+
+
     setIsStarted(false); // ★次トライアルは開始待ちに戻す  
     setIsCompleted(false);
     setNextNumber(1);
     setShuffleKey((k) => k + 1);
-    setTriggerIndex(0);
+    setTrialIndex(nextTrial);
 
     // ★計測リセット
     setTrialStartAt(null);  // 次のuseEffectでスタート時刻が入る
     setElapsedMs(null);
     setMissCount(0);
-  }, [isCompleted, elapsedMs, missCount]);
+  }, [isCompleted, elapsedMs, missCount, trialIndex]);
 
   // ===== トライアル開始（この画面になった瞬間）=====
   useEffect(() => {
@@ -174,13 +196,15 @@ export default function Task() {
         // 正解フィードバック
         setFeedback({ num, type: "correct" });
 
-
-        if (TRIGGERS.includes(num)) {
-          setTriggerIndex((prev) => {
-            const next = prev + 1;
-            // 非同期送信：state更新とは独立に投げる
-            postTrigger({ roomId: ROOM_ID, count: num, triggerIndex: next });
-            return next;
+        // ★ trialIndex と num から、そのtrial内の triggerIndex を決定
+        const tIdx = getTriggerIndex(trialIndex, num); // null or 0,1,2...
+        if (tIdx != null) {
+          // 非同期送信（UIは止めない）
+          postTrigger({
+            roomId: ROOM_ID,
+            trialIndex,
+            triggerIndex: tIdx,
+            count: num,
           });
         }
 
@@ -203,7 +227,7 @@ export default function Task() {
 
       window.setTimeout(() => setFeedback(null), 220);
     },
-    [isStarted, isCompleted, nextNumber, TOTAL, trialStartAt]
+    [isStarted, isCompleted, nextNumber, TOTAL, trialStartAt, trialIndex]
   );
 
   // ===== ベスト記録（最速）=====
@@ -244,7 +268,6 @@ export default function Task() {
                   setIsCompleted(false);
                   setFeedback(null);
                   setNextNumber(1);
-                  setTriggerIndex(0);
 
                   setTrialStartAt(null); // useEffectが入れる
                   setElapsedMs(null);
