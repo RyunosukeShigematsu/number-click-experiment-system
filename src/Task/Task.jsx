@@ -83,6 +83,39 @@ function beep({ durationMs = 120, freq = 880, gain = 0.12 } = {}) {
 }
 
 
+// ===== Fullscreen =====
+function getFsEl() {
+  return (
+    document.fullscreenElement ||
+    document.webkitFullscreenElement ||
+    document.mozFullScreenElement ||
+    document.msFullscreenElement ||
+    null
+  );
+}
+
+async function requestFs(el) {
+  try {
+    if (el.requestFullscreen) return await el.requestFullscreen();
+    if (el.webkitRequestFullscreen) return await el.webkitRequestFullscreen(); // Safari
+    if (el.mozRequestFullScreen) return await el.mozRequestFullScreen();
+    if (el.msRequestFullscreen) return await el.msRequestFullscreen();
+  } catch (e) {
+    console.warn("requestFullscreen failed", e);
+  }
+}
+
+async function exitFs() {
+  try {
+    if (document.exitFullscreen) return await document.exitFullscreen();
+    if (document.webkitExitFullscreen) return await document.webkitExitFullscreen(); // Safari
+    if (document.mozCancelFullScreen) return await document.mozCancelFullScreen();
+    if (document.msExitFullscreen) return await document.msExitFullscreen();
+  } catch (e) {
+    console.warn("exitFullscreen failed", e);
+  }
+}
+
 
 function makeNumbers(n) {
   return Array.from({ length: n }, (_, i) => i + 1);
@@ -98,9 +131,11 @@ function shuffle(arr) {
 }
 
 export default function Task() {
-  const TOTAL = 20;
-  const COLS = 5;
+  const TOTAL = 50;
+  const COLS = 10;
   const GAP = 10;
+
+  const [isFullscreen, setIsFullscreen] = useState(false);
 
   const rows = Math.ceil(TOTAL / COLS);
 
@@ -235,7 +270,38 @@ export default function Task() {
     setTrialStartAt(Date.now());
   }, [isStarted, trialStartAt, nextNumber]);
 
+  useEffect(() => {
+    const onFsChange = () => {
+      setIsFullscreen(!!getFsEl());
+    };
 
+    document.addEventListener("fullscreenchange", onFsChange);
+    document.addEventListener("webkitfullscreenchange", onFsChange); // Safari
+
+    // 初期反映
+    onFsChange();
+
+    return () => {
+      document.removeEventListener("fullscreenchange", onFsChange);
+      document.removeEventListener("webkitfullscreenchange", onFsChange);
+    };
+  }, []);
+
+  const toggleFullscreen = useCallback(async () => {
+    // ★音と同じで「ユーザー操作の瞬間」にやるのが重要
+    unlockAudio();
+
+    const fsEl = getFsEl();
+    if (fsEl) {
+      await exitFs();
+      return;
+    }
+
+    // どこをフルスクリーンにするか：
+    // - document.documentElement: 画面全体
+    // - task-rootのdivだけ: Task領域だけ
+    await requestFs(document.documentElement);
+  }, []);
 
   // クリック処理：正解のときだけ進める／全部押し終えたらリセット
   const handleClick = useCallback(
@@ -310,51 +376,61 @@ export default function Task() {
 
   return (
     <div className="task-root">
-      {/* 上部：NEXT表示（控えめ） */}
-      <div className="top-reserve">
-        <div className="top-left">
-          <div className="next-indicator">
-            {!isStarted ? (
-              <button
-                type="button"
-                className="start-on-next"
-                onClick={() => {
-                  unlockAudio(); // ★これがないと1秒後の音が鳴らないことがある
+      {!isFullscreen && (
+        <button
+          type="button"
+          className="fs-btn"
+          onClick={toggleFullscreen}
+        >
+          Full screen
+        </button>
+      )}
 
-                  // ★開始
-                  setIsStarted(true);
-
-                  // 念のためトライアル初期化（開始時の状態を固定）
-                  setIsCompleted(false);
-                  setFeedback(null);
-                  setNextNumber(1);
-
-                  setTrialStartAt(null); // useEffectが入れる
-                  setElapsedMs(null);
-                  setMissCount(0);
-
-                  // もし「開始押した瞬間に配置を確定したい」ならこれもON
-                  // setShuffleKey((k) => k + 1);
-                }}
-              >
-                開始
-              </button>
-            ) : (
-              <>
-                NEXT:
-                <span className="next-number">
-                  {isCompleted ? "Done" : nextNumber}
-                </span>
-              </>
-            )}
-          </div>
-        </div>
-
-        <div className="top-right" />
-      </div>
 
       <div className="layout">
         <div className="grid-wrap">
+          {/* 上部：NEXT表示（控えめ） */}
+
+       
+            <div className="next-indicator">
+              {!isStarted ? (
+                <button
+                  type="button"
+                  className="start-on-next"
+                  onClick={() => {
+                    unlockAudio(); // ★これがないと1秒後の音が鳴らないことがある
+
+                    // ★開始
+                    setIsStarted(true);
+
+                    // 念のためトライアル初期化（開始時の状態を固定）
+                    setIsCompleted(false);
+                    setFeedback(null);
+                    setNextNumber(1);
+
+                    setTrialStartAt(null); // useEffectが入れる
+                    setElapsedMs(null);
+                    setMissCount(0);
+
+                    // もし「開始押した瞬間に配置を確定したい」ならこれもON
+                    // setShuffleKey((k) => k + 1);
+                  }}
+                >
+                  開始
+                </button>
+              ) : (
+                <>
+                  NEXT:
+                  <span className="next-number">
+                    {isCompleted ? "Done" : nextNumber}
+                  </span>
+                </>
+              )}
+            </div>
+    
+
+
+
           <div ref={gridBoxRef} className="grid-box">
             <div
               className="number-grid"

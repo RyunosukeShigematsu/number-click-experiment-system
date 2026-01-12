@@ -4,43 +4,13 @@
 .task-root {
     height: 100dvh;
     overflow: hidden;
-    /* 念押し */
-    background: #ffffff;
+    background: #fff;
     padding: 20px 24px 24px;
     box-sizing: border-box;
-    transform: translateY(-40px);
-    /* ← ここだけ調整 */
 }
 
-/* 上部：layout と同じ2カラム構造にして「左カラムの真上」に固定 */
-.top-reserve {
-    height: 90px;
-    /* 少し増やして“真上”っぽく（好みで72〜110） */
-    max-width: 980px;
-    margin: 0 auto;
 
-    display: grid;
-    grid-template-columns: 1fr 280px;
-    /* layoutと合わせる */
-    gap: 20px;
-    align-items: end;
-}
 
-/* 左カラム（= grid-wrap の上） */
-.top-left {
-    width: min(720px, 68vw);
-    /* grid-wrap と合わせる */
-    justify-self: start;
-
-    display: flex;
-    justify-content: center;
-    /* 左カラムの中で中央寄せ */
-}
-
-/* 右カラムは予約（空でOK） */
-.top-right {
-    width: 280px;
-}
 
 /* 開始ボタン：next-number（数字の位置）に出す */
 .start-on-next {
@@ -79,18 +49,17 @@
 
 /* NEXTは小さく */
 .next-indicator {
-    font-size: 20px;
-    font-weight: 600;
-    color: rgba(0, 0, 0, 0.45);
-    letter-spacing: 0.04em;
-    text-align: center;
-    transform: translateY(100px);
-    /* ★ ここで下げる（10〜24で調整） */
-
-    /* ★追加：開始ボタンも同じ位置に置くため */
+    position: relative;
+    z-index: 5;
     display: flex;
     flex-direction: column;
     align-items: center;
+
+    margin: 0;
+    /* ここは0でOK */
+    padding-top: 8px;
+    /* 微調整したければここ */
+     transform: translateY(-20px); /* 下げたいなら + / 上げたいなら - */
 }
 
 /* 数字だけドン！ */
@@ -107,26 +76,27 @@
 
 /* メイン（左） + 右の情報領域（予約） */
 .layout {
-    height: calc(100dvh - 72px - 20px - 24px);
-    /* top-reserve と padding 分をざっくり差し引き */
+    height: 100%;
     display: grid;
     grid-template-columns: 1fr 280px;
-    column-gap: 80px;
-    /* ← ここを増やす（32〜40で調整） */
-    row-gap: 20px;
-    /* ← 縦は今まで通り */
-    align-items: center;
-    justify-items: start;
+    column-gap: 20px;
     max-width: 980px;
     margin: 0 auto;
+    min-height: 0;
+    /* 溢れ防止 */
 }
 
 /* 左側：数字グリッド領域（少し左寄りにする） */
 .grid-wrap {
-    margin-top: 24px;
     width: min(720px, 68vw);
-    /* 右の予約を確保しつつ、グリッドは大きめ */
-    justify-self: start;
+    min-height: 0;
+
+    display: grid;
+    grid-template-rows: auto auto auto;
+    /* ← 1fr をやめる */
+    row-gap: 16px;
+    /* ← ここが固定距離になる */
+     align-content: center;
 }
 
 
@@ -166,6 +136,14 @@
         0 6px 18px rgba(0, 0, 0, 0.06);
 
     transition: transform 80ms ease, background 120ms ease, border-color 120ms ease;
+
+    -webkit-tap-highlight-color: transparent;
+
+    outline: none;
+    -webkit-user-select: none;
+    user-select: none;
+
+    -webkit-touch-callout: none;
 }
 
 .cell:hover {
@@ -273,14 +251,14 @@
 }
 
 .next-trial-wrap {
-    margin-top: 14px;
+    margin-top: px;
     display: flex;
     justify-content: center;
 }
 
 /* 完了ボタンの“予約枠” - ここがあるからレイアウトが動かない */
 .next-trial-slot {
-    margin-top: 14px;
+    margin-top: 0px;
     height: 52px;
     /* ★ これが固定の肝（ボタン分） */
     display: flex;
@@ -331,6 +309,8 @@
 
     box-sizing: border-box;
     padding: 20px 18px;
+
+     margin-top: 130px; /* 上げたいなら -12px */
 
     display: flex;
     flex-direction: column;
@@ -514,18 +494,37 @@
 
 /* グリッドの“箱” */
 .grid-box {
-    /* 幅は grid-wrap に従う（＝既存の width:min(720px, 68vw)） */
+    position: relative;
+    z-index: 1;
     width: 100%;
-
-    background: rgba(0, 140, 255, 0.08);
-    /* ★縦が溢れないための肝：箱の最大高さを決める */
-    /* top-reserve + padding 等を考慮して「だいたいこのくらい」でも十分効く */
-    height: min(72vh, 400px);
-
-    /* 中央に寄せたいなら */
+    height: 45vh;
+    /* ← 画面の60% */
+    max-height: 620px;
+    /* 上限 */
+    min-height: 0;
     display: grid;
-    place-items: center;
-
-    /* 念のため */
+    place-items: start center;
+    /* ←ここだけ変える（center→start） */
     overflow: hidden;
+    /* background: rgba(0, 120, 255, 0.06); */
+    /* 好きな色に */
+}
+
+
+.fs-btn {
+    position: fixed;
+    top: 12px;
+    left: 12px;
+    z-index: 9999;
+
+    appearance: none;
+    border: 1px solid rgba(0, 0, 0, 0.25);
+    background: rgba(255, 255, 255, 0.9);
+    border-radius: 10px;
+    padding: 8px 14px;
+
+    font-size: 14px;
+    font-weight: 700;
+    cursor: pointer;
+    user-select: none;
 }
