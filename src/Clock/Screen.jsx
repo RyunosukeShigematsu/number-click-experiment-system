@@ -14,6 +14,7 @@ export default function StimulusScreen({
   canvasHeight = 220,
 }) {
   if (!visible) return null;
+  const [isFullscreen, setIsFullscreen] = useState(false);
 
   const [stimulus, setStimulus] = useState(["", "", "time", "normal"]);
 
@@ -70,6 +71,65 @@ export default function StimulusScreen({
       }
     }, 4000);
   }, [showStimulus]);
+
+  function getFsEl() {
+    return (
+      document.fullscreenElement ||
+      document.webkitFullscreenElement ||
+      document.mozFullScreenElement ||
+      document.msFullscreenElement ||
+      null
+    );
+  }
+
+  async function requestFs(el) {
+    try {
+      if (el.requestFullscreen) return await el.requestFullscreen();
+      if (el.webkitRequestFullscreen) return await el.webkitRequestFullscreen();
+      if (el.mozRequestFullScreen) return await el.mozRequestFullScreen();
+      if (el.msRequestFullscreen) return await el.msRequestFullscreen();
+    } catch (e) {
+      console.warn("requestFullscreen failed", e);
+    }
+  }
+
+  async function exitFs() {
+    try {
+      if (document.exitFullscreen) return await document.exitFullscreen();
+      if (document.webkitExitFullscreen) return await document.webkitExitFullscreen();
+      if (document.mozCancelFullScreen) return await document.mozCancelFullScreen();
+      if (document.msExitFullscreen) return await document.msExitFullscreen();
+    } catch (e) {
+      console.warn("exitFullscreen failed", e);
+    }
+  }
+
+  useEffect(() => {
+    const onFsChange = () => {
+      setIsFullscreen(!!getFsEl());
+    };
+
+    document.addEventListener("fullscreenchange", onFsChange);
+    document.addEventListener("webkitfullscreenchange", onFsChange);
+
+    onFsChange(); // 初期反映
+
+    return () => {
+      document.removeEventListener("fullscreenchange", onFsChange);
+      document.removeEventListener("webkitfullscreenchange", onFsChange);
+    };
+  }, []);
+
+  const toggleFullscreen = useCallback(async () => {
+    const fsEl = getFsEl();
+    if (fsEl) {
+      await exitFs();
+    } else {
+      await requestFs(document.documentElement);
+    }
+  }, []);
+
+
 
   // ★サーバから TRIGGER をポーリングして受信→playOnce()
   useEffect(() => {
@@ -131,17 +191,27 @@ export default function StimulusScreen({
 
   return (
     <div className="stimulus-screen" style={vars}>
+      {!isFullscreen && (
+        <button
+          type="button"
+          className="fs-btn"
+          onClick={toggleFullscreen}
+        >
+          Full screen
+        </button>
+      )}
+
       <div className="stimulus-stage">
         <div className="stimulus-center-wrap">
-            <StimulusP5
-              left={left}
-              right={right}
-              type={type}
-              emphasize={emphasize}
-              width={canvasWidth}
-              height={canvasHeight}
-              visible={showStimulus}
-            />
+          <StimulusP5
+            left={left}
+            right={right}
+            type={type}
+            emphasize={emphasize}
+            width={canvasWidth}
+            height={canvasHeight}
+            visible={showStimulus}
+          />
         </div>
       </div>
     </div>
