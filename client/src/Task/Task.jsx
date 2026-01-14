@@ -2,9 +2,12 @@
 import React, { useEffect, useMemo, useState, useCallback, useRef } from "react";
 import "./Task.css";
 import { getTriggerIndex, TRIGGER_PLAN } from "./triggerPlan";
+import { useLocation } from "react-router-dom";
 
 const ROOM_ID = "dev-room";
 const EVENTS_URL = "https://shigematsu.nkmr.io/m1_project/api/events.php";
+const AUDIO_UPLOAD_URL = "https://shigematsu.nkmr.io/m1_project/api/upload_audio.php";
+
 
 async function postTrigger({ roomId, trialIndex, triggerIndex, count }) {
   try {
@@ -130,9 +133,24 @@ function shuffle(arr) {
   return a;
 }
 
+function pickAudioMimeType() {
+  const cands = [
+    "audio/webm;codecs=opus",
+    "audio/webm",
+    "audio/mp4",     // Safari系
+    "audio/ogg;codecs=opus",
+    "audio/ogg",
+  ];
+  for (const t of cands) {
+    if (window.MediaRecorder?.isTypeSupported?.(t)) return t;
+  }
+  return ""; // 指定なしでも動くブラウザが多い
+}
+
+
 export default function Task() {
-  const TOTAL = 20;
-  const COLS = 5;
+  const TOTAL = 3;
+  const COLS = 3;
   const GAP = 10;
 
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -144,6 +162,116 @@ export default function Task() {
   // ★グリッドの“箱”を測る
   const gridBoxRef = useRef(null);
   const [cellPx, setCellPx] = useState(80); // 初期値は適当でOK
+
+
+  const mediaStreamRef = useRef(null);
+  const recorderRef = useRef(null);
+  const chunksRef = useRef([]);
+
+  const recordStartTsRef = useRef(null);
+  
+
+  const sessionIdRef = useRef(
+    (window.crypto?.randomUUID?.() ?? `sid_${Date.now()}_${Math.random()}`)
+  );
+  const recordStatusRef = useRef("recording"); // ★追加
+
+
+  const { state } = useLocation();
+
+  const participant =
+    state?.participant ??
+    sessionStorage.getItem("participant") ??
+    "unknown";
+
+  useEffect(() => {
+    if (state?.participant) {
+      sessionStorage.setItem("participant", state.participant);
+    }
+  }, [state?.participant]);
+
+
+  // ---- Task() 内に置く（participant 定義の後あたり）----
+
+  const uploadAudioBlob = useCallback(async (blob, meta) => {
+    try {
+      const fd = new FormData();
+      fd.append("audio", blob, "audio.webm");
+      fd.append("meta", JSON.stringify(meta));
+
+      const res = await fetch(AUDIO_UPLOAD_URL, { method: "POST", body: fd });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) console.warn("uploadAudioBlob not ok", res.status, json);
+    } catch (e) {
+      console.warn("uploadAudioBlob failed", e);
+    }
+  }, []);
+
+  const startRecording = useCallback(async ({ participant, trialIndex }) => {
+    try {
+      if (recorderRef.current && recorderRef.current.state === "recording") return;
+
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      mediaStreamRef.current = stream;
+
+      chunksRef.current = [];
+      const mimeType = pickAudioMimeType();
+
+      const rec = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
+      recorderRef.current = rec;
+
+      // ★追加：録音開始時刻（epoch ms）
+      recordStartTsRef.current = Date.now();
+
+
+      rec.ondataavailable = (e) => {
+        if (e.data && e.data.size > 0) chunksRef.current.push(e.data);
+      };
+
+
+      rec.onstop = async () => {
+
+        try { mediaStreamRef.current?.getTracks()?.forEach((t) => t.stop()); } catch { }
+        mediaStreamRef.current = null;
+
+        const blob = new Blob(chunksRef.current, { type: rec.mimeType || "audio/webm" });
+        chunksRef.current = [];
+
+        await uploadAudioBlob(blob, {
+          participant,
+          trialNo: trialIndex + 1,                 // ★trialは1-basedだけ送る
+          status: recordStatusRef.current,
+          startTs: recordStartTsRef.current,       // ★追加：録音開始時刻
+        });
+
+        recorderRef.current = null;
+      };
+
+      rec.start(1000);
+    } catch (e) {
+      console.warn("startRecording failed", e);
+    }
+  }, [uploadAudioBlob]);
+
+  const stopRecording = useCallback(async () => {
+    try {
+      const rec = recorderRef.current;
+      if (!rec) return;
+      if (rec.state === "recording") rec.stop();
+
+    } catch (e) {
+      console.warn("stopRecording failed", e);
+    }
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      // 画面離脱＝中断扱い
+      recordStatusRef.current = "aborted";
+      stopRecording();
+    };
+  }, [stopRecording]);
+
 
   useEffect(() => {
     const el = gridBoxRef.current;
@@ -259,6 +387,13 @@ export default function Task() {
     setTrialStartAt(null);  // 次のuseEffectでスタート時刻が入る
     setElapsedMs(null);
     setMissCount(0);
+
+    // 念のためまだ録音中なら止める（通常は既に止まってる）
+    // recordStatusRef.current は触らない（completed/aborted の意味が崩れる）
+    stopRecording();
+
+    recordStartTsRef.current = null;
+
   }, [isCompleted, elapsedMs, missCount, trialIndex]);
 
   // ===== トライアル開始（この画面になった瞬間）=====
@@ -339,6 +474,10 @@ export default function Task() {
           const end = Date.now();
           const start = trialStartAt ?? end; // 念のため
           setElapsedMs(end - start);
+
+          recordStatusRef.current = "completed";
+          // ★即停止（＝ここで音声ファイルが確定して upload される）
+          stopRecording();
         } else {
           setNextNumber((n) => n + 1);
         }
@@ -392,13 +531,19 @@ export default function Task() {
         <button
           type="button"
           className="menu-btn"
-          onClick={() => {
-            if (window.confirm("ホームに戻りますか？（実験は中断されます）")) {
-              // basename を使ってるならこれが一番安全
-              window.location.href = "/m1_project/app/";
-              // もしくは: navigate("/")
-            }
+          onClick={async () => {
+            if (!window.confirm("ホームに戻りますか？（実験は中断されます）")) return;
+
+            // 中断扱いで止める
+            recordStatusRef.current = "aborted";
+            await stopRecording();
+
+            // アップロードの猶予（短くてOK）
+            await new Promise((r) => setTimeout(r, 800));
+
+            window.location.href = "/m1_project/app/";
           }}
+
           aria-label="Menu"
           title="メニュー"
         >
@@ -435,6 +580,11 @@ export default function Task() {
 
                   // もし「開始押した瞬間に配置を確定したい」ならこれもON
                   // setShuffleKey((k) => k + 1);
+
+                  recordStatusRef.current = "recording";
+                  startRecording({ participant, trialIndex });
+
+
                 }}
               >
                 開始
