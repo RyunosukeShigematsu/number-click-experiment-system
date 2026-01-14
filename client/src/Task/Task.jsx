@@ -1,7 +1,7 @@
 // src/Task/Task.jsx
 import React, { useEffect, useMemo, useState, useCallback, useRef } from "react";
 import "./Task.css";
-import { getTriggerIndex, TRIGGER_PLAN } from "./triggerPlan";
+import { TRIGGER_PLAN } from "./triggerPlan";
 import { useLocation } from "react-router-dom";
 
 const ROOM_ID = "dev-room";
@@ -149,15 +149,20 @@ function pickAudioMimeType() {
 
 
 export default function Task() {
-  const TOTAL = 3;
-  const COLS = 3;
+  const TOTAL = 10;
+  const COLS = 5;
   const GAP = 10;
+  const CARRY_MARGIN = 5; // ★終わりの何個前から持ち越しにするか（後で調整）
+
 
   const [isFullscreen, setIsFullscreen] = useState(false);
 
   const rows = Math.ceil(TOTAL / COLS);
 
   const [trialIndex, setTrialIndex] = useState(0); // 0-based（何トライアル目か）
+
+  // グローバルに秒数を消費するポインタ（0-based）
+  const [globalTrigPtr, setGlobalTrigPtr] = useState(0);
 
   // ★グリッドの“箱”を測る
   const gridBoxRef = useRef(null);
@@ -169,13 +174,16 @@ export default function Task() {
   const chunksRef = useRef([]);
 
   const recordStartTsRef = useRef(null);
-  
 
-  const sessionIdRef = useRef(
-    (window.crypto?.randomUUID?.() ?? `sid_${Date.now()}_${Math.random()}`)
-  );
+  // ★持ち越しが発生したら、このトライアル中はトリガー処理を止める
+  const [carryPending, setCarryPending] = useState(false);
+
+  // ★即時に止めたいので ref でも持つ（setState反映待ちの隙間を潰す）
+  const carryPendingRef = useRef(false);
+
+  const allTriggersConsumed = globalTrigPtr >= TRIGGER_PLAN.length;
+
   const recordStatusRef = useRef("recording"); // ★追加
-
 
   const { state } = useLocation();
 
@@ -266,11 +274,18 @@ export default function Task() {
 
   useEffect(() => {
     return () => {
+      // ★遅延中のビープ/送信を止める
+      if (triggerTimerRef.current) {
+        window.clearTimeout(triggerTimerRef.current);
+        triggerTimerRef.current = null;
+      }
+
       // 画面離脱＝中断扱い
       recordStatusRef.current = "aborted";
       stopRecording();
     };
   }, [stopRecording]);
+
 
 
   useEffect(() => {
@@ -324,6 +339,10 @@ export default function Task() {
     };
   }, []);
 
+  const TRIGGER_DELAY_MS = 1000;      // ★ここで遅延量を調整
+  const triggerTimerRef = useRef(null); // ★遅延タイマー（溜まり防止）
+
+
   // ===== 配置（シャッフル） =====
   const [shuffleKey, setShuffleKey] = useState(0);
 
@@ -348,13 +367,15 @@ export default function Task() {
   const [elapsedMs, setElapsedMs] = useState(null);       // 経過(ms) 完了時に確定
   const [missCount, setMissCount] = useState(0);          // ミス回数
 
+  // ★「次のトリガー間隔」を測る基準時刻（trial開始 or 前回ビープ）
+  const [triggerBaseAt, setTriggerBaseAt] = useState(null);
+
   // ===== 履歴（直近5回分）=====
   const [history, setHistory] = useState([]);
 
 
   // リセット：NEXTを1に戻して、配置もランダムにし直す
   const resetTrial = useCallback(() => {
-    const totalTrials = TRIGGER_PLAN.length;
     // ★ 完了済みなら、今回の記録を履歴の先頭へ（最大5件）
     if (isCompleted && elapsedMs != null) {
       setHistory((prev) => {
@@ -365,16 +386,6 @@ export default function Task() {
 
     // 次の trialIndex を決める
     const nextTrial = trialIndex + 1;
-
-    // ★ 2トライアル終わったら一旦リロード
-    if (nextTrial >= totalTrials) {
-      // 念のため started/completed を戻す（体感のため）
-      setIsStarted(false);
-      setIsCompleted(false);
-      // すぐリロード
-      window.location.reload();
-      return;
-    }
 
 
     setIsStarted(false); // ★次トライアルは開始待ちに戻す  
@@ -393,8 +404,18 @@ export default function Task() {
     stopRecording();
 
     recordStartTsRef.current = null;
+    setTriggerBaseAt(null); // ★次の開始でセットし直す
+    setCarryPending(false); // ★追加（念のため）
+    carryPendingRef.current = false; // ★追加
 
-  }, [isCompleted, elapsedMs, missCount, trialIndex]);
+    // ★ 遅延中のビープ/送信が残ってたらキャンセル
+    if (triggerTimerRef.current) {
+      window.clearTimeout(triggerTimerRef.current);
+      triggerTimerRef.current = null;
+    }
+
+
+  }, [isCompleted, elapsedMs, missCount, trialIndex, stopRecording]);
 
   // ===== トライアル開始（この画面になった瞬間）=====
   useEffect(() => {
@@ -402,8 +423,91 @@ export default function Task() {
     if (trialStartAt != null) return;
     if (nextNumber !== 1) return;
 
-    setTrialStartAt(Date.now());
+    const t = Date.now();
+    setTrialStartAt(t);
+    setTriggerBaseAt(t); // ★トリガー間隔の基準もtrial開始に
+
+    setCarryPending(false); // ★追加：次トライアル開始で carry解除
+    carryPendingRef.current = false; // ★追加
+
+
   }, [isStarted, trialStartAt, nextNumber]);
+
+  useEffect(() => {
+    if (!isStarted) return;
+    if (triggerBaseAt == null) return;
+    if (isCompleted) return;
+
+    // ★持ち越し中は、このトライアルでは鳴らさない（次トライアルで再開）
+    if (carryPendingRef.current) return;
+
+
+    // 全部使い切ったら何もしない（＝この後は鳴らない）
+    if (globalTrigPtr >= TRIGGER_PLAN.length) return;
+
+    const timer = window.setInterval(() => {
+      const trigger = TRIGGER_PLAN[globalTrigPtr];
+      if (!trigger) return;
+
+      const sec = trigger.intervalSec;
+      const triggerNo = trigger.index; // 表示やログ用（1-based）
+
+
+      const elapsedMs = Date.now() - triggerBaseAt;
+      if (elapsedMs < sec * 1000) return;
+
+      // ===== 持ち越し判定（終わりのCARRY_MARGIN個前に入ってたら carry）=====
+      const shouldCarry = nextNumber > (TOTAL - CARRY_MARGIN);
+
+      if (shouldCarry) {
+        carryPendingRef.current = true; // ★まずrefで即止め
+        setCarryPending(true);          // ★UI側も止め状態に
+        return;
+      }
+
+      // ===== 表示（TRIGGER送信）→ 遅れてビープ（前コードと同じ思想）=====
+      unlockAudio();
+
+      // ① まず送る（= Screen側はこの瞬間に表示開始）
+      postTrigger({
+        roomId: ROOM_ID,
+        trialIndex,
+        triggerIndex: globalTrigPtr,
+        count: nextNumber - 1,
+      });
+
+      // ② ビープだけ遅らせる（溜まり防止で直前予約は消す）
+      if (triggerTimerRef.current) {
+        window.clearTimeout(triggerTimerRef.current);
+        triggerTimerRef.current = null;
+      }
+
+      triggerTimerRef.current = window.setTimeout(() => {
+        beep({ durationMs: 220, freq: 1000, gain: 0.35 });
+        triggerTimerRef.current = null;
+      }, TRIGGER_DELAY_MS);
+
+
+
+      setGlobalTrigPtr((p) => p + 1);
+
+      // 次の間隔は「今」から数える
+      const now = Date.now();
+      setTriggerBaseAt(now);
+    }, 50);
+
+    return () => window.clearInterval(timer);
+  }, [
+    isStarted,
+    triggerBaseAt,
+    isCompleted,
+    globalTrigPtr,
+    nextNumber,
+    trialIndex,
+    TOTAL,
+    CARRY_MARGIN,
+    carryPending, // ★追加
+  ]);
 
   useEffect(() => {
     const onFsChange = () => {
@@ -449,23 +553,7 @@ export default function Task() {
         // 正解フィードバック
         setFeedback({ num, type: "correct" });
 
-        // ★ trialIndex と num から、そのtrial内の triggerIndex を決定
-        const tIdx = getTriggerIndex(trialIndex, num); // null or 0,1,2...
-        if (tIdx != null) {
-          // ★ クリック時点で音を解錠（安全）
-          unlockAudio();
-          // ★ 1秒後にビープ
-          window.setTimeout(() => {
-            beep({ durationMs: 220, freq: 1000, gain: 0.35 });
-          }, 1500);
-          // 非同期送信（UIは止めない）
-          postTrigger({
-            roomId: ROOM_ID,
-            trialIndex,
-            triggerIndex: tIdx,
-            count: num,
-          });
-        }
+
 
         // 50達成したら「完了」にする（次へはボタン）
         if (nextNumber >= TOTAL) {
@@ -645,11 +733,25 @@ export default function Task() {
               <button
                 type="button"
                 className="next-trial-button"
-                onClick={resetTrial}
+                onClick={async () => {
+                  if (!allTriggersConsumed) {
+                    resetTrial();
+                    return;
+                  }
+
+                  // ★終了：最後のトライアルは完了済みなので録音も基本止まってるはずだが念のため
+                  recordStatusRef.current = "completed";
+                  await stopRecording();
+                  await new Promise((r) => setTimeout(r, 800));
+
+                  // Loginへ（あなたのルーティングに合わせて変えてOK）
+                  window.location.href = "../Login";
+                }}
               >
-                次のトライアルへ
+                {allTriggersConsumed ? "終了" : "次のトライアルへ"}
               </button>
             )}
+
           </div>
         </div>
 

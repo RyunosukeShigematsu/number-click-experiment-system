@@ -16,7 +16,12 @@ export default function StimulusScreen({
   if (!visible) return null;
   const [isFullscreen, setIsFullscreen] = useState(false);
 
-  const [stimulus, setStimulus] = useState(["", "", "time", "normal"]);
+  const [stimulus, setStimulus] = useState({
+    left: "",
+    right: "",
+    type: "time",
+    emphasize: "normal",
+  });
 
   // ★ 追加：表示中フラグ（true=刺激表示、false=黒画面）
   const [showStimulus, setShowStimulus] = useState(false);
@@ -30,11 +35,16 @@ export default function StimulusScreen({
   // ★追加：サーバイベントの読み取り位置（重複防止）
   const lastIdRef = useRef(0);
 
-  const totalTrials = STIMULUS_PLAN?.length ?? 0;
-  if (totalTrials === 0) return null;
+  const totalStimuli = STIMULUS_PLAN?.length ?? 0;
+  if (totalStimuli === 0) return null;
 
-  // stimulus が未設定のときは適当な初期値（黒画面なので何でもOK）
-  const [left, right, type, emphasize] = stimulus;
+
+  const { left, right, type, emphasize } = stimulus ?? {
+    left: "",
+    right: "",
+    type: "time",
+    emphasize: "normal",
+  };
 
   const clearTimer = () => {
     if (timerRef.current) {
@@ -160,14 +170,14 @@ export default function StimulusScreen({
 
         for (const ev of events) {
           if (ev?.type === "TRIGGER") {
-            const t = Number(ev.trialIndex);
             const k = Number(ev.triggerIndex);
+            if (!Number.isInteger(k) || k < 0) continue;
 
-            const next = STIMULUS_PLAN?.[t]?.[k] ?? null;
-            if (next) {
-              playOnce(next);
+            const item = STIMULUS_PLAN?.[k] ?? null;
+            if (item && typeof item === "object") {
+              playOnce(item);
             } else {
-              console.warn("No stimulus for", { trialIndex: ev.trialIndex, triggerIndex: ev.triggerIndex, ev });
+              console.warn("Invalid stimulus at index", { k, item, ev });
             }
           }
         }
