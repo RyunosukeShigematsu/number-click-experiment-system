@@ -135,7 +135,7 @@ export default function StimulusScreen({
   useEffect(() => {
     let alive = true;
 
-    const tick = async () => {
+    const tick = async ({ skipPlay = false } = {}) => {
       try {
         const since = lastIdRef.current || 0;
         const res = await fetch(
@@ -148,12 +148,17 @@ export default function StimulusScreen({
         // 期待形式：{ ok:true, events:[{id, type, ...}, ...] }
         const events = Array.isArray(data?.events) ? data.events : [];
 
+        // ★ まずIDだけ進める
         for (const ev of events) {
-          // id更新（重複防止）
           if (typeof ev.id === "number") {
             lastIdRef.current = Math.max(lastIdRef.current, ev.id);
           }
+        }
 
+        // ★ 起動直後は再生しない
+        if (skipPlay) return;
+
+        for (const ev of events) {
           if (ev?.type === "TRIGGER") {
             const t = Number(ev.trialIndex);
             const k = Number(ev.triggerIndex);
@@ -172,6 +177,10 @@ export default function StimulusScreen({
     };
 
     const loop = async () => {
+      // ★ 起動時：過去分を消化（再生しない）
+      await tick({ skipPlay: true });
+
+      // ★ 以降は新着だけ再生
       while (alive) {
         await tick();
         await new Promise((r) => setTimeout(r, POLL_MS));
