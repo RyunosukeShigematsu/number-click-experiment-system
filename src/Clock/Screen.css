@@ -48,18 +48,78 @@
 
 .fs-btn {
   position: fixed;
-  top: 12px;
-  left: 12px;
+  top: 16px;
+  right: 16px;   /* ★ 右上 */
+  left: auto;    /* ★ 左指定を無効化 */
   z-index: 9999;
 
-  appearance: none;
-  border: 1px solid rgba(0,0,0,0.25);
-  background: rgba(255,255,255,0.9);
-  border-radius: 10px;
-  padding: 8px 14px;
+  width: 40px;
+  height: 40px;
+  padding: 0;
 
-  font-size: 14px;
-  font-weight: 700;
+  display: grid;
+  place-items: center;
+
+  appearance: none;
+  border: 1px solid rgba(0,0,0,0.16);
+  background: #ffffff;
+  border-radius: 12px;
+
+  font-size: 18px;
+  font-weight: 900;
   cursor: pointer;
   user-select: none;
+
+  box-shadow:
+    0 1px 2px rgba(0,0,0,0.08),
+    0 10px 24px rgba(0,0,0,0.06);
+
+  transition: transform 80ms ease, background 120ms ease, box-shadow 160ms ease;
 }
+
+.fs-btn:hover {
+  background: #f2f2f2;
+}
+
+.fs-btn:active {
+  transform: scale(0.99);
+}
+
+.menu-btn {
+  position: fixed;
+  top: 16px;
+  right: 64px; /* fs-btn(右端)の左に置く */
+  z-index: 9999;
+
+  width: 40px;
+  height: 40px;
+  padding: 0;
+
+  display: grid;
+  place-items: center;
+
+  appearance: none;
+  border: 1px solid rgba(0,0,0,0.16);
+  background: #ffffff;
+  border-radius: 12px;
+
+  font-size: 20px;
+  font-weight: 900;
+  cursor: pointer;
+  user-select: none;
+
+  box-shadow:
+    0 1px 2px rgba(0,0,0,0.08),
+    0 10px 24px rgba(0,0,0,0.06);
+
+  transition: transform 80ms ease, background 120ms ease, box-shadow 160ms ease;
+}
+
+.menu-btn:hover {
+  background: #f2f2f2;
+}
+
+.menu-btn:active {
+  transform: scale(0.99);
+}
+

@@ -196,8 +196,27 @@ export default function StimulusScreen({
           type="button"
           className="fs-btn"
           onClick={toggleFullscreen}
+          aria-label="Fullscreen"
+          title="フルスクリーン"
         >
-          Full screen
+          ⛶
+        </button>
+      )}
+
+      {!isFullscreen && (
+        <button
+          type="button"
+          className="menu-btn"
+          onClick={() => {
+            if (window.confirm("ホームに戻りますか？（実験は中断されます）")) {
+              window.location.href = "/m1_project/app/";
+              // or navigate("/")
+            }
+          }}
+          aria-label="Menu"
+          title="メニュー"
+        >
+          ⋯
         </button>
       )}
 

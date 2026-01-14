@@ -131,8 +131,8 @@ function shuffle(arr) {
 }
 
 export default function Task() {
-  const TOTAL = 50;
-  const COLS = 10;
+  const TOTAL = 20;
+  const COLS = 5;
   const GAP = 10;
 
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -381,53 +381,74 @@ export default function Task() {
           type="button"
           className="fs-btn"
           onClick={toggleFullscreen}
+          aria-label="Fullscreen"
+          title="フルスクリーン"
         >
-          Full screen
+          ⛶
         </button>
       )}
+
+      {!isFullscreen && (
+        <button
+          type="button"
+          className="menu-btn"
+          onClick={() => {
+            if (window.confirm("ホームに戻りますか？（実験は中断されます）")) {
+              // basename を使ってるならこれが一番安全
+              window.location.href = "/m1_project/app/";
+              // もしくは: navigate("/")
+            }
+          }}
+          aria-label="Menu"
+          title="メニュー"
+        >
+          ⋯
+        </button>
+      )}
+
 
 
       <div className="layout">
         <div className="grid-wrap">
           {/* 上部：NEXT表示（控えめ） */}
 
-       
-            <div className="next-indicator">
-              {!isStarted ? (
-                <button
-                  type="button"
-                  className="start-on-next"
-                  onClick={() => {
-                    unlockAudio(); // ★これがないと1秒後の音が鳴らないことがある
 
-                    // ★開始
-                    setIsStarted(true);
+          <div className="next-indicator">
+            {!isStarted ? (
+              <button
+                type="button"
+                className="start-on-next"
+                onClick={() => {
+                  unlockAudio(); // ★これがないと1秒後の音が鳴らないことがある
 
-                    // 念のためトライアル初期化（開始時の状態を固定）
-                    setIsCompleted(false);
-                    setFeedback(null);
-                    setNextNumber(1);
+                  // ★開始
+                  setIsStarted(true);
 
-                    setTrialStartAt(null); // useEffectが入れる
-                    setElapsedMs(null);
-                    setMissCount(0);
+                  // 念のためトライアル初期化（開始時の状態を固定）
+                  setIsCompleted(false);
+                  setFeedback(null);
+                  setNextNumber(1);
 
-                    // もし「開始押した瞬間に配置を確定したい」ならこれもON
-                    // setShuffleKey((k) => k + 1);
-                  }}
-                >
-                  開始
-                </button>
-              ) : (
-                <>
-                  NEXT:
-                  <span className="next-number">
-                    {isCompleted ? "Done" : nextNumber}
-                  </span>
-                </>
-              )}
-            </div>
-    
+                  setTrialStartAt(null); // useEffectが入れる
+                  setElapsedMs(null);
+                  setMissCount(0);
+
+                  // もし「開始押した瞬間に配置を確定したい」ならこれもON
+                  // setShuffleKey((k) => k + 1);
+                }}
+              >
+                開始
+              </button>
+            ) : (
+              <>
+                NEXT:
+                <span className="next-number">
+                  {isCompleted ? "Done" : nextNumber}
+                </span>
+              </>
+            )}
+          </div>
+
 
 
 
