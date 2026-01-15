@@ -7,6 +7,8 @@ import { useLocation } from "react-router-dom";
 const ROOM_ID = "dev-room";
 const EVENTS_URL = "https://shigematsu.nkmr.io/m1_project/api/events.php";
 const AUDIO_UPLOAD_URL = "https://shigematsu.nkmr.io/m1_project/api/upload_audio.php";
+const TASKLOG_UPLOAD_URL = "https://shigematsu.nkmr.io/m1_project/api/upload_tasklog.php";
+
 
 
 async function postTrigger({ roomId, trialIndex, triggerIndex, count }) {
@@ -175,8 +177,16 @@ export default function Task() {
 
   const recordStartTsRef = useRef(null);
 
+  // ===== Task click log (per trial) =====
+  const taskLogRef = useRef([]);          // click events
+  const taskZeroTsRef = useRef(null);     // "0ms" 기준 = start button time (epoch ms)
+  const taskLogUploadedRef = useRef(false); // trialごとの二重upload防止
+
+
   // ★持ち越しが発生したら、このトライアル中はトリガー処理を止める
   const [carryPending, setCarryPending] = useState(false);
+
+  const hasStartedRef = useRef(false);
 
   // ★即時に止めたいので ref でも持つ（setState反映待ちの隙間を潰す）
   const carryPendingRef = useRef(false);
@@ -191,6 +201,24 @@ export default function Task() {
     state?.participant ??
     sessionStorage.getItem("participant") ??
     "unknown";
+
+  // ===== TaskLog: events を貯める =====
+  const taskEventsRef = useRef([]);
+
+  // 1イベント追加（trialをまたいでもOK。trialNoも入れる）
+  const addTaskEvent = useCallback((type, payload = {}) => {
+    taskEventsRef.current.push({
+      type,
+      ...payload,
+      participant,
+      trialNo: trialIndex + 1, // 1-basedで保存
+      ts: Date.now(),
+    });
+  }, [participant, trialIndex]);
+
+  const recordStopPromiseRef = useRef(null);
+
+
 
   useEffect(() => {
     if (state?.participant) {
@@ -215,9 +243,42 @@ export default function Task() {
     }
   }, []);
 
+
+
+  // ===== TaskLog: まとめてアップロード =====
+  const uploadTaskLog = useCallback(async ({ participant, trialIndex, status }) => {
+    try {
+      // ここで保存するJSON本体
+      const obj = {
+        participant,
+        trialNo: trialIndex + 1,
+        status,
+        createdAt: Date.now(),
+        events: taskEventsRef.current,
+      };
+
+      const blob = new Blob([JSON.stringify(obj, null, 2)], {
+        type: "application/json",
+      });
+
+      const fd = new FormData();
+      fd.append("meta", JSON.stringify({ participant, trialNo: trialIndex + 1, status }));
+      fd.append("log", blob, "taskLog.json"); // ★PHPは $_FILES['log'] を見てる
+
+      const res = await fetch(TASKLOG_UPLOAD_URL, { method: "POST", body: fd });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) console.warn("uploadTaskLog not ok", res.status, json);
+    } catch (e) {
+      console.warn("uploadTaskLog failed", e);
+    }
+  }, []);
+
+
   const startRecording = useCallback(async ({ participant, trialIndex }) => {
     try {
-      if (recorderRef.current && recorderRef.current.state === "recording") return;
+      const cur = recorderRef.current;
+      if (cur && cur.state !== "inactive") return; // recording / paused は全部弾く
+
 
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       mediaStreamRef.current = stream;
@@ -231,31 +292,51 @@ export default function Task() {
       // ★追加：録音開始時刻（epoch ms）
       recordStartTsRef.current = Date.now();
 
-
       rec.ondataavailable = (e) => {
         if (e.data && e.data.size > 0) chunksRef.current.push(e.data);
       };
 
+      // ★ Promiseをセット（stopRecordingがawaitできるように）
+      recordStopPromiseRef.current = new Promise((resolve) => {
+        rec.onstop = async () => {
+          try {
+            // ① mic停止
+            try { mediaStreamRef.current?.getTracks()?.forEach((t) => t.stop()); } catch { }
+            mediaStreamRef.current = null;
 
-      rec.onstop = async () => {
+            // ② 録音時間（ms → 秒）を計算（★ここで定義する）
+            const endTs = Date.now();
+            const startTs = recordStartTsRef.current;
+            const durationMs =
+              typeof startTs === "number" ? Math.max(0, endTs - startTs) : null;
 
-        try { mediaStreamRef.current?.getTracks()?.forEach((t) => t.stop()); } catch { }
-        mediaStreamRef.current = null;
+            // ③ blob生成
+            const blob = new Blob(chunksRef.current, { type: rec.mimeType || "audio/webm" });
+            chunksRef.current = [];
 
-        const blob = new Blob(chunksRef.current, { type: rec.mimeType || "audio/webm" });
-        chunksRef.current = [];
+            // ④ upload（aborted/completed を meta に）
+            await uploadAudioBlob(blob, {
+              participant,
+              trialNo: trialIndex + 1,
+              status: recordStatusRef.current,
+              startTs: startTs ?? null,
+              endTs,
+              durationMs, // ★ファイル名に使う用
+            });
 
-        await uploadAudioBlob(blob, {
-          participant,
-          trialNo: trialIndex + 1,                 // ★trialは1-basedだけ送る
-          status: recordStatusRef.current,
-          startTs: recordStartTsRef.current,       // ★追加：録音開始時刻
-        });
-
-        recorderRef.current = null;
-      };
+            recorderRef.current = null;
+          } catch (e) {
+            console.warn("rec.onstop failed", e);
+          } finally {
+            resolve();                    // ★ここが命
+            recordStopPromiseRef.current = null;
+          }
+        };
+      });
 
       rec.start(1000);
+
+
     } catch (e) {
       console.warn("startRecording failed", e);
     }
@@ -265,27 +346,13 @@ export default function Task() {
     try {
       const rec = recorderRef.current;
       if (!rec) return;
-      if (rec.state === "recording") rec.stop();
-
+      const p = recordStopPromiseRef.current;
+      if (rec.state !== "inactive") rec.stop(); // recording / paused をまとめて止める
+      if (p) await p; // ★ ここが重要
     } catch (e) {
       console.warn("stopRecording failed", e);
     }
   }, []);
-
-  useEffect(() => {
-    return () => {
-      // ★遅延中のビープ/送信を止める
-      if (triggerTimerRef.current) {
-        window.clearTimeout(triggerTimerRef.current);
-        triggerTimerRef.current = null;
-      }
-
-      // 画面離脱＝中断扱い
-      recordStatusRef.current = "aborted";
-      stopRecording();
-    };
-  }, [stopRecording]);
-
 
 
   useEffect(() => {
@@ -367,6 +434,58 @@ export default function Task() {
   const [elapsedMs, setElapsedMs] = useState(null);       // 経過(ms) 完了時に確定
   const [missCount, setMissCount] = useState(0);          // ミス回数
 
+
+  useEffect(() => {
+    return () => {
+      // ★遅延中のビープ/送信を止める
+      if (triggerTimerRef.current) {
+        window.clearTimeout(triggerTimerRef.current);
+        triggerTimerRef.current = null;
+      }
+
+      // 画面離脱＝中断扱い
+      recordStatusRef.current = "aborted";
+
+      // ★task log も（まだ送ってなければ）中断として送る
+      // Start押してないなら絶対送らない
+      if (!hasStartedRef.current) return;
+
+      // zeroTs がない（開始が確定してない）なら送らない
+      if (taskZeroTsRef.current == null) return;
+
+      if (!taskLogUploadedRef.current) {
+        taskLogUploadedRef.current = true;
+
+        const end = Date.now();
+        const z = taskZeroTsRef.current;
+        const start = trialStartAt ?? z;
+
+        uploadTaskLog({
+          meta: {
+            participant,
+            trialNo: trialIndex + 1,
+            status: "aborted",
+            zeroTs: z,
+            trialStartAt: start,
+            endAt: end,
+            elapsedMs: end - start,
+            missCount,
+            total: TOTAL,
+            cols: COLS,
+          },
+          events: taskLogRef.current,
+        });
+      }
+
+
+      // stopRecording();
+      (async () => {
+        await stopRecording();
+      })();
+
+    };
+  }, [stopRecording, uploadTaskLog, participant, trialIndex, trialStartAt, missCount, TOTAL, COLS]);
+
   // ★「次のトリガー間隔」を測る基準時刻（trial開始 or 前回ビープ）
   const [triggerBaseAt, setTriggerBaseAt] = useState(null);
 
@@ -375,7 +494,8 @@ export default function Task() {
 
 
   // リセット：NEXTを1に戻して、配置もランダムにし直す
-  const resetTrial = useCallback(() => {
+  const resetTrial = useCallback(async () => {
+    hasStartedRef.current = false;
     // ★ 完了済みなら、今回の記録を履歴の先頭へ（最大5件）
     if (isCompleted && elapsedMs != null) {
       setHistory((prev) => {
@@ -401,7 +521,7 @@ export default function Task() {
 
     // 念のためまだ録音中なら止める（通常は既に止まってる）
     // recordStatusRef.current は触らない（completed/aborted の意味が崩れる）
-    stopRecording();
+    await stopRecording();
 
     recordStartTsRef.current = null;
     setTriggerBaseAt(null); // ★次の開始でセットし直す
@@ -413,6 +533,11 @@ export default function Task() {
       window.clearTimeout(triggerTimerRef.current);
       triggerTimerRef.current = null;
     }
+
+    // ===== task log reset (次トライアルへ向けて) =====
+    taskZeroTsRef.current = null;
+    taskLogRef.current = [];
+    taskLogUploadedRef.current = false;
 
 
   }, [isCompleted, elapsedMs, missCount, trialIndex, stopRecording]);
@@ -475,6 +600,12 @@ export default function Task() {
         triggerIndex: globalTrigPtr,
         count: nextNumber - 1,
       });
+
+      addTaskEvent("TRIGGER_SENT", {
+        triggerIndex: globalTrigPtr,
+        count: nextNumber - 1,
+      });
+
 
       // ② ビープだけ遅らせる（溜まり防止で直前予約は消す）
       if (triggerTimerRef.current) {
@@ -544,8 +675,22 @@ export default function Task() {
 
   // クリック処理：正解のときだけ進める／全部押し終えたらリセット
   const handleClick = useCallback(
-    (num) => {
+    async (num) => {
       if (!isStarted) return; // ★開始前は押せない
+
+      // ===== click log (timestamp from Start button) =====
+      const z = taskZeroTsRef.current;
+      if (z != null) {
+        const t = Date.now() - z; // ms from trial start (Start button)
+        taskLogRef.current.push({
+          t,
+          num,                   // 押した数字
+          expected: nextNumber,  // 本来押すべき数字
+          correct: num === nextNumber,
+        });
+      }
+
+
       // 完了後は押せない（進行しない）
       if (isCompleted) return;
 
@@ -553,32 +698,69 @@ export default function Task() {
         // 正解フィードバック
         setFeedback({ num, type: "correct" });
 
+        addTaskEvent("CLICK_CORRECT", { num });
 
 
         // 50達成したら「完了」にする（次へはボタン）
         if (nextNumber >= TOTAL) {
           setIsCompleted(true);
-          // ★完了：経過時間を確定
           const end = Date.now();
-          const start = trialStartAt ?? end; // 念のため
+          const z = taskZeroTsRef.current ?? end;
+          const start = trialStartAt ?? z;
+
           setElapsedMs(end - start);
 
           recordStatusRef.current = "completed";
-          // ★即停止（＝ここで音声ファイルが確定して upload される）
-          stopRecording();
+
+          if (!taskLogUploadedRef.current) {
+            taskLogUploadedRef.current = true;
+
+            await uploadTaskLog({
+              meta: {
+                participant,
+                trialNo: trialIndex + 1,
+                status: "completed",
+                zeroTs: z,
+                trialStartAt: start,
+                endAt: end,
+                elapsedMs: end - start,
+                missCount,
+                total: TOTAL,
+                cols: COLS,
+              },
+              events: taskLogRef.current,
+            });
+          }
+
+          await stopRecording();
+
         } else {
           setNextNumber((n) => n + 1);
         }
       } else {
         // ミスフィードバック
         setFeedback({ num, type: "wrong" });
+        addTaskEvent("CLICK_WRONG", { num, expected: nextNumber });
+
         // ★ミス回数加算
         setMissCount((m) => m + 1);
       }
 
       window.setTimeout(() => setFeedback(null), 220);
     },
-    [isStarted, isCompleted, nextNumber, TOTAL, trialStartAt, trialIndex]
+    [
+      isStarted,
+      isCompleted,
+      nextNumber,
+      TOTAL,
+      trialStartAt,
+      trialIndex,
+      participant,
+      missCount,
+      COLS,
+      uploadTaskLog,
+      stopRecording,
+    ]
   );
 
   // ===== ベスト記録（最速）=====
@@ -626,6 +808,39 @@ export default function Task() {
             recordStatusRef.current = "aborted";
             await stopRecording();
 
+            // ===== task log upload (aborted) =====
+            if (!taskLogUploadedRef.current) {
+              // ★ Startしてないなら送らない
+              if (!hasStartedRef.current) {
+                // 何もしない（ログ無しで戻る）
+              } else if (taskZeroTsRef.current == null) {
+                // 何もしない（開始時刻が無いなら送らない）
+              } else {
+                taskLogUploadedRef.current = true;
+
+                const end = Date.now();
+                const z = taskZeroTsRef.current;
+                const start = trialStartAt ?? z;
+
+                await uploadTaskLog({
+                  meta: {
+                    participant,
+                    trialNo: trialIndex + 1,
+                    status: "aborted",
+                    zeroTs: z,
+                    trialStartAt: start,
+                    endAt: end,
+                    elapsedMs: end - start,
+                    missCount,
+                    total: TOTAL,
+                    cols: COLS,
+                  },
+                  events: taskLogRef.current,
+                });
+              }
+            }
+
+
             // アップロードの猶予（短くてOK）
             await new Promise((r) => setTimeout(r, 800));
 
@@ -654,26 +869,39 @@ export default function Task() {
                 onClick={() => {
                   unlockAudio(); // ★これがないと1秒後の音が鳴らないことがある
 
-                  // ★開始
-                  setIsStarted(true);
+                  // ===== まずrefを確定（ここが超重要）=====
+                  const t0 = Date.now();
+                  taskZeroTsRef.current = t0;
+                  hasStartedRef.current = true;
 
-                  // 念のためトライアル初期化（開始時の状態を固定）
+                  // ===== task log init =====
+                  taskLogRef.current = [];
+                  taskLogUploadedRef.current = false;
+
+                  // ===== 状態初期化 =====
                   setIsCompleted(false);
                   setFeedback(null);
                   setNextNumber(1);
 
-                  setTrialStartAt(null); // useEffectが入れる
+                  setTrialStartAt(t0);
+                  setTriggerBaseAt(t0);
+
                   setElapsedMs(null);
                   setMissCount(0);
 
-                  // もし「開始押した瞬間に配置を確定したい」ならこれもON
-                  // setShuffleKey((k) => k + 1);
-
+                  // ===== 録音 =====
                   recordStatusRef.current = "recording";
+
+                  // 追加ここ
+                  taskEventsRef.current = [];
+                  addTaskEvent("TRIAL_START", {});
+
                   startRecording({ participant, trialIndex });
 
-
+                  // ===== 最後に開始（再レンダーを最後に）=====
+                  setIsStarted(true);
                 }}
+
               >
                 開始
               </button>
