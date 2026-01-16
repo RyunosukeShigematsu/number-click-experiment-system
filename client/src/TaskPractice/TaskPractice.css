@@ -1,0 +1,526 @@
+/* src/TaskPractice/TaskPractice.css */
+
+
+.task-root {
+    height: 100dvh;
+    overflow: hidden;
+    background: #fff;
+    padding: 20px 24px 24px;
+    box-sizing: border-box;
+}
+
+
+
+
+/* 開始ボタン：next-number（数字の位置）に出す */
+.start-on-next {
+    appearance: none;
+    border: 1px solid rgba(0, 0, 0, 0.18);
+    background: #f0f0f0;
+    color: rgba(0, 0, 0, 0.78);
+    border-radius: 14px;
+
+    /* ★数字と同じ場所に見せる */
+    margin-top: 4px;
+    /* ← next-number の margin-top と合わせる */
+    padding: 12px 24px;
+
+    font-size: 22px;
+    font-weight: 900;
+    letter-spacing: 0.06em;
+
+    cursor: pointer;
+    user-select: none;
+
+    box-shadow:
+        0 1px 2px rgba(0, 0, 0, 0.10),
+        0 8px 20px rgba(0, 0, 0, 0.08);
+
+    transition: box-shadow 160ms ease, background 120ms ease;
+}
+
+.start-on-next:hover {
+    background: #e7e7e7;
+    box-shadow:
+        0 2px 4px rgba(0, 0, 0, 0.12),
+        0 12px 26px rgba(0, 0, 0, 0.10);
+}
+
+
+/* NEXTは小さく */
+.next-indicator {
+    position: relative;
+    z-index: 5;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+
+    margin: 0;
+    /* ここは0でOK */
+    padding-top: 8px;
+    /* 微調整したければここ */
+     transform: translateY(-20px); /* 下げたいなら + / 上げたいなら - */
+}
+
+/* 数字だけドン！ */
+.next-number {
+    display: block;
+    margin-top: 4px;
+    font-size: 60px;
+    /* ← 大きくした（48〜64で調整） */
+    font-weight: 800;
+    line-height: 1;
+    color: rgba(0, 0, 0, 0.88);
+}
+
+
+/* メイン（左） + 右の情報領域（予約） */
+.layout {
+    height: 100%;
+    display: grid;
+    grid-template-columns: 1fr 280px;
+    column-gap: 20px;
+    max-width: 980px;
+    margin: 0 auto;
+    min-height: 0;
+    /* 溢れ防止 */
+}
+
+/* 左側：数字グリッド領域（少し左寄りにする） */
+.grid-wrap {
+    width: min(720px, 68vw);
+    min-height: 0;
+
+    display: grid;
+    grid-template-rows: auto auto auto;
+    /* ← 1fr をやめる */
+    row-gap: 16px;
+    /* ← ここが固定距離になる */
+     align-content: center;
+}
+
+
+/* グリッド */
+.number-grid {
+    display: grid;
+    gap: 10px;
+}
+
+/* マス */
+.cell {
+    appearance: none;
+    border: 1px solid rgba(0, 0, 0, 0.12);
+    background: #fafafa;
+    border-radius: 14px;
+
+    /* ★ 必ず正方形 */
+    width: 100%;
+    aspect-ratio: 1 / 1;
+
+    /* ★ 正方形の中で数字を中央に */
+    padding: 0;
+    display: grid;
+    place-items: center;
+
+    /* 文字 */
+    font-size: 18px;
+    font-weight: 600;
+    color: rgba(0, 0, 0, 0.85);
+
+    cursor: pointer;
+    user-select: none;
+
+    /* ★ 常時：うっすらボタン影 */
+    box-shadow:
+        0 1px 2px rgba(0, 0, 0, 0.10),
+        0 6px 18px rgba(0, 0, 0, 0.06);
+
+    transition: transform 80ms ease, background 120ms ease, border-color 120ms ease;
+
+    -webkit-tap-highlight-color: transparent;
+
+    outline: none;
+    -webkit-user-select: none;
+    user-select: none;
+
+    -webkit-touch-callout: none;
+}
+
+.cell:hover {
+    background: #f3f3f3;
+    box-shadow:
+        0 2px 4px rgba(0, 0, 0, 0.10),
+        0 10px 24px rgba(0, 0, 0, 0.08);
+}
+
+.cell:active {
+    transform: scale(0.98);
+}
+
+.cell:focus-visible {
+    outline: 3px solid rgba(0, 0, 0, 0.18);
+    outline-offset: 2px;
+}
+
+.cell--blank {
+    color: transparent;
+}
+
+.cell:disabled {
+    cursor: default;
+}
+
+.cell:disabled:hover {
+    background: #fafafa;
+    box-shadow:
+        0 1px 2px rgba(0, 0, 0, 0.10),
+        0 6px 18px rgba(0, 0, 0, 0.06);
+}
+
+/* 正解：ポン（色なし） */
+@keyframes correctPressGlow {
+    0% {
+        transform: scale(1);
+        box-shadow:
+            0 1px 2px rgba(0, 0, 0, 0.10),
+            0 6px 18px rgba(0, 0, 0, 0.06);
+    }
+
+    /* 押し込み＆光る */
+    30% {
+        transform: scale(0.88);
+        box-shadow:
+            0 2px 6px rgba(0, 0, 0, 0.12),
+            0 14px 30px rgba(0, 0, 0, 0.12),
+            inset 0 0 0 999px rgba(255, 255, 255, 0.10);
+        /* ★ "濃淡"っぽさ（ふちは消えにくい） */
+    }
+
+    /* 余韻（少し戻って少し残す） */
+    55% {
+        transform: scale(0.92);
+        box-shadow:
+            0 2px 6px rgba(0, 0, 0, 0.11),
+            0 12px 26px rgba(0, 0, 0, 0.10),
+            inset 0 0 0 999px rgba(255, 255, 255, 0.08);
+    }
+
+    /* 戻る */
+    100% {
+        transform: scale(1);
+        box-shadow:
+            0 1px 2px rgba(0, 0, 0, 0.10),
+            0 6px 18px rgba(0, 0, 0, 0.06);
+    }
+}
+
+.cell--correct {
+    animation: correctPressGlow 320ms cubic-bezier(.2, .8, .2, 1);
+}
+
+
+/* ミス：左右ブルブル（あなたの採用案） */
+@keyframes shake {
+    0% {
+        transform: translateX(0);
+    }
+
+    20% {
+        transform: translateX(-6px);
+    }
+
+    40% {
+        transform: translateX(6px);
+    }
+
+    60% {
+        transform: translateX(-4px);
+    }
+
+    80% {
+        transform: translateX(4px);
+    }
+
+    100% {
+        transform: translateX(0);
+    }
+}
+
+.cell--wrong {
+    animation: shake 220ms ease-in-out;
+}
+
+.next-trial-wrap {
+    margin-top: px;
+    display: flex;
+    justify-content: center;
+}
+
+/* 完了ボタンの"予約枠" - ここがあるからレイアウトが動かない */
+.next-trial-slot {
+    margin-top: 0px;
+    height: 52px;
+    /* ★ これが固定の肝（ボタン分） */
+    display: flex;
+    justify-content: center;
+    align-items: flex-end;
+}
+
+
+.next-trial-button {
+    appearance: none;
+    border: 1px solid rgba(0, 0, 0, 0.18);
+    background: #f0f0f0;
+    /* ★ グレー */
+    color: rgba(0, 0, 0, 0.78);
+    border-radius: 14px;
+    padding: 12px 18px;
+
+    font-size: 15px;
+    font-weight: 700;
+
+    cursor: pointer;
+    user-select: none;
+
+    box-shadow:
+        0 1px 2px rgba(0, 0, 0, 0.10),
+        0 8px 20px rgba(0, 0, 0, 0.08);
+
+    transition: transform 80ms ease, box-shadow 160ms ease, background 120ms ease;
+    /* ★ これを追加：表示位置を下げる（ここが本題） */
+    transform: translateY(1px);
+}
+
+.next-trial-button:hover {
+    background: #e7e7e7;
+    box-shadow:
+        0 2px 4px rgba(0, 0, 0, 0.12),
+        0 12px 26px rgba(0, 0, 0, 0.10);
+}
+
+/* 右側：情報表示予定の予約領域 */
+.right-reserve {
+    width: 280px;
+    height: min(530px, 70vh);
+
+    border: 1px dashed rgba(0, 0, 0, 0.08);
+    border-radius: 16px;
+    background: rgba(0, 0, 0, 0.02);
+
+    box-sizing: border-box;
+    padding: 20px 18px;
+
+     margin-top: 130px; /* 上げたいなら -12px */
+
+    display: flex;
+    flex-direction: column;
+    /* ★縦並びに戻す */
+    align-items: center;
+    /* ★全体を中央寄せ */
+    justify-content: flex-start;
+}
+
+/* 右カラム内のメトリクス表示用スタイル（文字を全体的に拡大） */
+
+.metrics-block {
+    width: 100%;
+    max-width: 220px;
+    transform: translateX(-10px);
+    margin-bottom: 26px;
+    /* 少し余白アップ */
+    position: relative;
+    /* ★ 疑似要素の基準 */
+}
+
+.metrics-title {
+    font-size: 22px;
+    /* ← 16 → 20 */
+    font-weight: 800;
+    color: rgba(0, 0, 0, 0.82);
+    margin-bottom: 12px;
+    letter-spacing: 0.02em;
+}
+
+.metrics-row {
+    font-size: 17px;
+    /* ← 15 → 17 */
+    font-weight: 500;
+    color: rgba(0, 0, 0, 0.68);
+    line-height: 1.9;
+    /* 行間ゆったり */
+}
+
+.metrics-history {
+    font-size: 16px;
+    /* ← 14 → 16 */
+    font-weight: 500;
+    color: rgba(0, 0, 0, 0.62);
+    line-height: 2.0;
+}
+
+/* ===== 今回の記録（基準より一段強い） ===== */
+
+.metrics-current .metrics-row {
+    display: flex;
+    align-items: baseline;
+    gap: 5px;
+    margin-top: 4px;
+}
+
+/* ラベル */
+.metrics-current .metrics-label {
+    font-size: 18px;
+    font-weight: 600;
+    color: rgba(0, 0, 0, 0.55);
+}
+
+/* 数字（時間・回数 共通） */
+.metrics-current .metrics-value {
+    font-size: 18px;
+    /* ← 少し大きく */
+    font-weight: 800;
+    /* ← 太く */
+    color: rgba(0, 0, 0, 0.85);
+    line-height: 1;
+}
+
+/* 単位 */
+.metrics-current .metrics-unit {
+    font-size: 18px;
+    font-weight: 600;
+    color: rgba(0, 0, 0, 0.55);
+}
+
+@keyframes clearWave {
+    0% {
+        background: #fafafa;
+        box-shadow:
+            0 1px 2px rgba(0, 0, 0, 0.10),
+            0 6px 18px rgba(0, 0, 0, 0.06);
+    }
+
+    45% {
+        /* ★ "濃淡"だけ濃くする（色味は足さない） */
+        background: #e9e9e9;
+        box-shadow:
+            0 2px 6px rgba(0, 0, 0, 0.12),
+            0 14px 30px rgba(0, 0, 0, 0.10);
+    }
+
+    100% {
+        background: #fafafa;
+        box-shadow:
+            0 1px 2px rgba(0, 0, 0, 0.10),
+            0 6px 18px rgba(0, 0, 0, 0.06);
+    }
+}
+
+/* 完了時だけ wave（左上→右下の順に遅延） */
+.cell--wave {
+    animation: clearWave 360ms ease-in-out both;
+    animation-delay: calc(var(--d) * 55ms);
+    /* 45〜70msで調整 */
+}
+
+/* グリッドの"箱" */
+.grid-box {
+    position: relative;
+    z-index: 1;
+    width: 100%;
+    height: 45vh;
+    /* ← 画面の60% */
+    max-height: 620px;
+    /* 上限 */
+    min-height: 0;
+    display: grid;
+    place-items: start center;
+    /* ←ここだけ変える（center→start） */
+    overflow: hidden;
+    /* background: rgba(0, 120, 255, 0.06); */
+    /* 好きな色に */
+}
+
+
+.fs-btn {
+  position: fixed;
+  top: 16px;
+  right: 16px;     /* ★ 左→右へ */
+  left: auto;      /* ★ 念のため */
+  z-index: 9999;
+
+    /* ★ 追加（保険） */
+  bottom: auto;
+  inset: auto;
+
+  width: 40px;
+  height: 40px;
+  padding: 0;      /* ★ アイコンだけなので */
+
+  display: grid;
+  place-items: center;
+
+  appearance: none;
+  border: 1px solid rgba(0, 0, 0, 0.16);
+  background: #ffffff;
+  border-radius: 12px;
+
+  font-size: 18px;
+  font-weight: 900;
+  cursor: pointer;
+  user-select: none;
+
+  box-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.08),
+    0 10px 24px rgba(0, 0, 0, 0.06);
+
+  transition: transform 80ms ease, background 120ms ease, box-shadow 160ms ease;
+}
+
+.fs-btn:hover {
+  background: #f2f2f2;
+}
+
+.fs-btn:active {
+  transform: scale(0.99);
+}
+
+/* fs ボタンを右上に固定（他の定義に勝つ） */
+.task-root .fs-btn {
+  right: 16px !important;
+  left: auto !important;
+  top: 16px !important;
+}
+
+/* 練習を終了ボタン */
+.practice-exit-btn {
+    appearance: none;
+    border: 1px solid rgba(0, 0, 0, 0.18);
+    background: #f0f0f0;
+    color: rgba(0, 0, 0, 0.78);
+    border-radius: 12px;
+    padding: 12px 18px;
+    width: 100%;
+
+    font-size: 14px;
+    font-weight: 600;
+
+    cursor: pointer;
+    user-select: none;
+
+    box-shadow:
+        0 1px 2px rgba(0, 0, 0, 0.10),
+        0 8px 20px rgba(0, 0, 0, 0.08);
+
+    transition: transform 80ms ease, box-shadow 160ms ease, background 120ms ease;
+}
+
+.practice-exit-btn:hover {
+    background: #e7e7e7;
+    box-shadow:
+        0 2px 4px rgba(0, 0, 0, 0.12),
+        0 12px 26px rgba(0, 0, 0, 0.10);
+}
+
+.practice-exit-btn:active {
+    transform: scale(0.98);
+}

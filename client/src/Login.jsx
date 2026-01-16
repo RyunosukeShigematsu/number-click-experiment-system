@@ -7,7 +7,7 @@ export default function Login() {
     const navigate = useNavigate();
 
     const [name, setName] = useState("");
-    const [dest, setDest] = useState(null); // "Task" | "Screen"
+    const [dest, setDest] = useState(null); // "Task" | "Screen" | "TaskPractice"
     const [isFullscreen, setIsFullscreen] = useState(false);
 
     // fullscreen 状態を追従（ESCで抜けた時も反映）
@@ -46,6 +46,16 @@ export default function Login() {
     return (
         <div className="login-root">
             <div className="login-card" role="form" aria-label="Login">
+
+                <button
+                    type="button"
+                    className="login-practice-btn"
+                    onClick={() => navigate("/TaskPractice")}
+                    aria-label="Practice"
+                    title="練習用"
+                >
+                    練習
+                </button>
 
                 <button
                     type="button"
