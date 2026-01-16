@@ -205,6 +205,8 @@ export default function Task() {
 
   // ===== TaskLog: events を貯める =====
   const taskEventsRef = useRef([]);
+  // ===== Beep回数カウンタ（trialごとにリセット） =====
+  const beepCountRef = useRef(0);
 
   // 1イベント追加（trialをまたいでもOK。trialNoも入れる）
   const addTaskEvent = useCallback((type, payload = {}) => {
@@ -491,9 +493,10 @@ export default function Task() {
             total: TOTAL,
             progress,
             missClicks: missCountRef.current,
+            beepCount: beepCountRef.current,
             elapsedMs: end - (trialStartAtRef.current ?? z),
           },
-          events: taskEventsRef.current.filter(e => e.type === "click"),
+          events: taskEventsRef.current.filter(e => e.type === "click" || e.type === "beep"),
         });
 
 
@@ -639,6 +642,17 @@ export default function Task() {
 
       triggerTimerRef.current = window.setTimeout(() => {
         beep({ durationMs: 220, freq: 1000, gain: 0.35 });
+        // === beepイベント追加 ===
+        beepCountRef.current += 1;
+        const z = taskZeroTsRef.current;
+        if (z != null) {
+          const tRelMs = Date.now() - z;
+          taskEventsRef.current.push({
+            type: "beep",
+            tRelMs,
+          });
+          console.log("BEEP", { beepCount: beepCountRef.current, tRelMs });
+        }
         triggerTimerRef.current = null;
       }, TRIGGER_DELAY_MS);
 
@@ -746,6 +760,7 @@ export default function Task() {
             total: TOTAL,
             progress,
             missClicks: missCount,
+            beepCount: beepCountRef.current,
             elapsedMs: end - start,
 
           };
@@ -759,7 +774,7 @@ export default function Task() {
 
             await uploadTaskLog({
               meta,
-              events: taskEventsRef.current.filter(e => e.type === "click"), // clickだけにする保険
+              events: taskEventsRef.current.filter(e => e.type === "click" || e.type === "beep"),
             });
           }
 
@@ -865,9 +880,10 @@ export default function Task() {
                     total: TOTAL,
                     progress,
                     missClicks: missCountRef.current,
+                    beepCount: beepCountRef.current,
                     elapsedMs: Date.now() - (trialStartAtRef.current ?? taskZeroTsRef.current),
                   },
-                  events: taskEventsRef.current.filter(e => e.type === "click"),
+                  events: taskEventsRef.current.filter(e => e.type === "click" || e.type === "beep"),
                 });
 
 
@@ -912,6 +928,7 @@ export default function Task() {
                   // taskLogRef.current = [];
                   taskLogUploadedRef.current = false;
                   taskEventsRef.current = [];   // ★これを追加（clickログを必ず新規に）
+                  beepCountRef.current = 0;    // ★beep回数もリセット
 
                   // ===== 状態初期化 =====
                   setIsCompleted(false);
