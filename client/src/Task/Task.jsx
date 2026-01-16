@@ -178,10 +178,11 @@ export default function Task() {
   const recordStartTsRef = useRef(null);
 
   // ===== Task click log (per trial) =====
-  const taskLogRef = useRef([]);          // click events
+  // const taskLogRef = useRef([]);          // click events
   const taskZeroTsRef = useRef(null);     // "0ms" 기준 = start button time (epoch ms)
   const taskLogUploadedRef = useRef(false); // trialごとの二重upload防止
 
+  const isLeavingRef = useRef(false);
 
   // ★持ち越しが発生したら、このトライアル中はトリガー処理を止める
   const [carryPending, setCarryPending] = useState(false);
@@ -246,15 +247,11 @@ export default function Task() {
 
 
   // ===== TaskLog: まとめてアップロード =====
-  const uploadTaskLog = useCallback(async ({ participant, trialIndex, status }) => {
+  const uploadTaskLog = useCallback(async ({ meta, events }) => {
     try {
-      // ここで保存するJSON本体
       const obj = {
-        participant,
-        trialNo: trialIndex + 1,
-        status,
-        createdAt: Date.now(),
-        events: taskEventsRef.current,
+        meta,
+        events,
       };
 
       const blob = new Blob([JSON.stringify(obj, null, 2)], {
@@ -262,8 +259,8 @@ export default function Task() {
       });
 
       const fd = new FormData();
-      fd.append("meta", JSON.stringify({ participant, trialNo: trialIndex + 1, status }));
-      fd.append("log", blob, "taskLog.json"); // ★PHPは $_FILES['log'] を見てる
+      fd.append("meta", JSON.stringify(meta)); // ★PHPのファイル名用
+      fd.append("log", blob, "taskLog.json");
 
       const res = await fetch(TASKLOG_UPLOAD_URL, { method: "POST", body: fd });
       const json = await res.json().catch(() => ({}));
@@ -272,6 +269,7 @@ export default function Task() {
       console.warn("uploadTaskLog failed", e);
     }
   }, []);
+
 
 
   const startRecording = useCallback(async ({ participant, trialIndex }) => {
@@ -354,6 +352,15 @@ export default function Task() {
     }
   }, []);
 
+  useEffect(() => {
+    const onBeforeUnload = () => {
+      isLeavingRef.current = true;
+    };
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => window.removeEventListener("beforeunload", onBeforeUnload);
+  }, []);
+
+
 
   useEffect(() => {
     const el = gridBoxRef.current;
@@ -434,6 +441,21 @@ export default function Task() {
   const [elapsedMs, setElapsedMs] = useState(null);       // 経過(ms) 完了時に確定
   const [missCount, setMissCount] = useState(0);          // ミス回数
 
+  const nextNumberRef = useRef(1);
+  useEffect(() => { nextNumberRef.current = nextNumber; }, [nextNumber]);
+
+  const missCountRef = useRef(0);
+  useEffect(() => { missCountRef.current = missCount; }, [missCount]);
+
+  const trialIndexRef = useRef(0);
+  useEffect(() => { trialIndexRef.current = trialIndex; }, [trialIndex]);
+
+  const trialStartAtRef = useRef(null);
+  useEffect(() => { trialStartAtRef.current = trialStartAt; }, [trialStartAt]);
+
+  const participantRef = useRef(participant);
+  useEffect(() => { participantRef.current = participant; }, [participant]);
+
 
   useEffect(() => {
     return () => {
@@ -443,7 +465,8 @@ export default function Task() {
         triggerTimerRef.current = null;
       }
 
-      // 画面離脱＝中断扱い
+      // ★本当に離脱する時だけ aborted 扱いにする
+      if (!isLeavingRef.current) return;
       recordStatusRef.current = "aborted";
 
       // ★task log も（まだ送ってなければ）中断として送る
@@ -458,23 +481,22 @@ export default function Task() {
 
         const end = Date.now();
         const z = taskZeroTsRef.current;
-        const start = trialStartAt ?? z;
 
+        const progress = Math.max(0, nextNumberRef.current - 1);
         uploadTaskLog({
           meta: {
-            participant,
-            trialNo: trialIndex + 1,
+            participant: participantRef.current,
+            trialNo: trialIndexRef.current + 1,
             status: "aborted",
-            zeroTs: z,
-            trialStartAt: start,
-            endAt: end,
-            elapsedMs: end - start,
-            missCount,
             total: TOTAL,
-            cols: COLS,
+            progress,
+            missClicks: missCountRef.current,
+            elapsedMs: end - (trialStartAtRef.current ?? z),
           },
-          events: taskLogRef.current,
+          events: taskEventsRef.current.filter(e => e.type === "click"),
         });
+
+
       }
 
 
@@ -484,7 +506,8 @@ export default function Task() {
       })();
 
     };
-  }, [stopRecording, uploadTaskLog, participant, trialIndex, trialStartAt, missCount, TOTAL, COLS]);
+  }, []);
+
 
   // ★「次のトリガー間隔」を測る基準時刻（trial開始 or 前回ビープ）
   const [triggerBaseAt, setTriggerBaseAt] = useState(null);
@@ -536,9 +559,10 @@ export default function Task() {
 
     // ===== task log reset (次トライアルへ向けて) =====
     taskZeroTsRef.current = null;
-    taskLogRef.current = [];
+    // taskLogRef.current = [];
     taskLogUploadedRef.current = false;
 
+    taskEventsRef.current = [];
 
   }, [isCompleted, elapsedMs, missCount, trialIndex, stopRecording]);
 
@@ -675,18 +699,24 @@ export default function Task() {
 
   // クリック処理：正解のときだけ進める／全部押し終えたらリセット
   const handleClick = useCallback(
-    async (num) => {
+    async (num, pos) => {
+      console.log("CLICK", { isStarted, num, nextNumber, len: taskEventsRef.current.length });
       if (!isStarted) return; // ★開始前は押せない
 
-      // ===== click log (timestamp from Start button) =====
+      // ===== click event (Start button ms) =====
       const z = taskZeroTsRef.current;
       if (z != null) {
-        const t = Date.now() - z; // ms from trial start (Start button)
-        taskLogRef.current.push({
-          t,
-          num,                   // 押した数字
-          expected: nextNumber,  // 本来押すべき数字
-          correct: num === nextNumber,
+        const tRelMs = Date.now() - z;
+
+        // num, nextNumber, pos(x,y) を events に積む
+        taskEventsRef.current.push({
+          type: "click",
+          tRelMs,
+          pressed: num,
+          expected: nextNumber,
+          isCorrect: num === nextNumber,
+          x: pos?.x ?? null,
+          y: pos?.y ?? null,
         });
       }
 
@@ -707,6 +737,18 @@ export default function Task() {
           const end = Date.now();
           const z = taskZeroTsRef.current ?? end;
           const start = trialStartAt ?? z;
+          const progress = TOTAL; // 完了なので確定
+
+          const meta = {
+            participant,
+            trialNo: trialIndex + 1,
+            status: "completed",
+            total: TOTAL,
+            progress,
+            missClicks: missCount,
+            elapsedMs: end - start,
+
+          };
 
           setElapsedMs(end - start);
 
@@ -716,19 +758,8 @@ export default function Task() {
             taskLogUploadedRef.current = true;
 
             await uploadTaskLog({
-              meta: {
-                participant,
-                trialNo: trialIndex + 1,
-                status: "completed",
-                zeroTs: z,
-                trialStartAt: start,
-                endAt: end,
-                elapsedMs: end - start,
-                missCount,
-                total: TOTAL,
-                cols: COLS,
-              },
-              events: taskLogRef.current,
+              meta,
+              events: taskEventsRef.current.filter(e => e.type === "click"), // clickだけにする保険
             });
           }
 
@@ -804,6 +835,8 @@ export default function Task() {
           onClick={async () => {
             if (!window.confirm("ホームに戻りますか？（実験は中断されます）")) return;
 
+            isLeavingRef.current = true;
+
             // 中断扱いで止める
             recordStatusRef.current = "aborted";
             await stopRecording();
@@ -822,21 +855,22 @@ export default function Task() {
                 const z = taskZeroTsRef.current;
                 const start = trialStartAt ?? z;
 
+                const progress = Math.max(0, nextNumberRef.current - 1);
+
                 await uploadTaskLog({
                   meta: {
-                    participant,
-                    trialNo: trialIndex + 1,
+                    participant: participantRef.current,
+                    trialNo: trialIndexRef.current + 1,
                     status: "aborted",
-                    zeroTs: z,
-                    trialStartAt: start,
-                    endAt: end,
-                    elapsedMs: end - start,
-                    missCount,
                     total: TOTAL,
-                    cols: COLS,
+                    progress,
+                    missClicks: missCountRef.current,
+                    elapsedMs: Date.now() - (trialStartAtRef.current ?? taskZeroTsRef.current),
                   },
-                  events: taskLogRef.current,
+                  events: taskEventsRef.current.filter(e => e.type === "click"),
                 });
+
+
               }
             }
 
@@ -875,8 +909,9 @@ export default function Task() {
                   hasStartedRef.current = true;
 
                   // ===== task log init =====
-                  taskLogRef.current = [];
+                  // taskLogRef.current = [];
                   taskLogUploadedRef.current = false;
+                  taskEventsRef.current = [];   // ★これを追加（clickログを必ず新規に）
 
                   // ===== 状態初期化 =====
                   setIsCompleted(false);
@@ -891,10 +926,6 @@ export default function Task() {
 
                   // ===== 録音 =====
                   recordStatusRef.current = "recording";
-
-                  // 追加ここ
-                  taskEventsRef.current = [];
-                  addTaskEvent("TRIAL_START", {});
 
                   startRecording({ participant, trialIndex });
 
@@ -935,6 +966,9 @@ export default function Task() {
                 const isCorrect = feedback?.num === num && feedback?.type === "correct";
                 const isWrong = feedback?.num === num && feedback?.type === "wrong";
 
+                const y = Math.floor(i / COLS);
+                const x = i % COLS;
+
                 return (
                   <button
                     key={`${shuffleKey}-${num}`}
@@ -946,7 +980,7 @@ export default function Task() {
                       isCorrect ? "cell--correct" : "",
                       isWrong ? "cell--wrong" : "",
                     ].filter(Boolean).join(" ")}
-                    onClick={() => handleClick(num)}
+                    onClick={() => handleClick(num, { x, y })}
                   >
                     {isStarted ? num : ""}
                   </button>
