@@ -1,0 +1,87 @@
+/* src/Completed.css */
+
+.completed-root {
+  min-height: 100dvh;
+  display: grid;
+  place-items: center;
+  background: #ffffff;
+  padding: 24px;
+  box-sizing: border-box;
+}
+
+.completed-card {
+  position: relative;
+  width: min(560px, 92vw);
+  background: #fff;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  border-radius: 18px;
+  box-shadow:
+    0 2px 10px rgba(0, 0, 0, 0.06),
+    0 20px 50px rgba(0, 0, 0, 0.06);
+  padding: 22px 22px 18px;
+  box-sizing: border-box;
+}
+
+.completed-title {
+  font-size: 26px;
+  font-weight: 900;
+  letter-spacing: 0.02em;
+  color: rgba(0, 0, 0, 0.86);
+  margin-bottom: 14px;
+}
+
+.completed-message {
+  font-size: 18px;
+  font-weight: 500;
+  color: rgba(0, 0, 0, 0.72);
+  text-align: center;
+  margin: 24px 0 32px;
+  line-height: 1.6;
+  letter-spacing: 0.01em;
+}
+
+.completed-note {
+  font-size: 14px;
+  font-weight: 400;
+  color: rgba(0, 0, 0, 0.56);
+  text-align: center;
+  margin-bottom: 24px;
+  line-height: 1.5;
+  letter-spacing: 0.01em;
+}
+
+.completed-primary {
+  width: 100%;
+  height: 48px;
+  border-radius: 12px;
+  border: none;
+  background: rgba(0, 0, 0, 0.86);
+  color: #fff;
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  user-select: none;
+
+  box-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.08),
+    0 10px 24px rgba(0, 0, 0, 0.06);
+
+  transition: transform 80ms ease, background 120ms ease, box-shadow 160ms ease;
+}
+
+.completed-primary:hover {
+  background: rgba(0, 0, 0, 0.92);
+  box-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.1),
+    0 12px 28px rgba(0, 0, 0, 0.08);
+}
+
+.completed-primary:active {
+  transform: scale(0.98);
+}
+
+.completed-primary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}

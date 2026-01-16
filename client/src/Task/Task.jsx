@@ -2,7 +2,7 @@
 import React, { useEffect, useMemo, useState, useCallback, useRef } from "react";
 import "./Task.css";
 import { TRIGGER_PLAN } from "./triggerPlan";
-import { useLocation } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 
 const ROOM_ID = "dev-room";
 const EVENTS_URL = "https://shigematsu.nkmr.io/m1_project/api/events.php";
@@ -156,6 +156,7 @@ export default function Task() {
   const GAP = 10;
   const CARRY_MARGIN = 5; // ★終わりの何個前から持ち越しにするか（後で調整）
 
+  const navigate = useNavigate();
 
   const [isFullscreen, setIsFullscreen] = useState(false);
 
@@ -1023,8 +1024,8 @@ export default function Task() {
                   await stopRecording();
                   await new Promise((r) => setTimeout(r, 800));
 
-                  // Loginへ（あなたのルーティングに合わせて変えてOK）
-                  window.location.href = "../Login";
+                  // Completed画面へ
+                  navigate("/Completed", { replace: true });
                 }}
               >
                 {allTriggersConsumed ? "終了" : "次のトライアルへ"}
