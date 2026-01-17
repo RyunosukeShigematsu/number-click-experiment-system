@@ -151,8 +151,8 @@ function pickAudioMimeType() {
 
 
 export default function Task() {
-  const TOTAL = 10;
-  const COLS = 5;
+  const TOTAL = 50;
+  const COLS = 10;
   const GAP = 10;
   const CARRY_MARGIN = 5; // ★終わりの何個前から持ち越しにするか（後で調整）
 

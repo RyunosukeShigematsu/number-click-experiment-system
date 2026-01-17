@@ -1,10 +1,54 @@
 // src/TaskPractice/TaskPractice.jsx
 import React, { useEffect, useMemo, useState, useCallback, useRef } from "react";
+import { PRACTICE_TRIGGER_PLAN } from "./practiceTriggerPlan";
 import "./TaskPractice.css";
 
-const TOTAL = 10;
+const TOTAL = 20;
 const COLS = 5;
 const GAP = 10;
+const CARRY_MARGIN = 5; // ★終わりの何個前から持ち越しにするか
+
+// ===== Audio =====
+let audioContext = null;
+
+function ensureAudio() {
+  if (!audioContext) {
+    audioContext = new (window.AudioContext || window.webkitAudioContext)();
+  }
+  if (!audioContext) return null;
+  if (audioContext.state === "suspended") {
+    try { audioContext.resume(); } catch { }
+  }
+  return audioContext;
+}
+
+function beep({ durationMs = 120, freq = 880, gain = 0.12 } = {}) {
+  const ctx = ensureAudio();
+  if (!ctx) return;
+
+  if (ctx.state === "suspended") ctx.resume().catch(() => { });
+
+  const t0 = ctx.currentTime;
+  const osc = ctx.createOscillator();
+  const g = ctx.createGain();
+
+  osc.type = "sine";
+  osc.frequency.value = freq;
+
+  g.gain.setValueAtTime(0.0001, t0);
+  g.gain.exponentialRampToValueAtTime(gain, t0 + 0.01);
+  g.gain.exponentialRampToValueAtTime(0.0001, t0 + durationMs / 1000);
+
+  osc.connect(g);
+  g.connect(ctx.destination);
+
+  osc.start(t0);
+  osc.stop(t0 + durationMs / 1000 + 0.02);
+
+  osc.onended = () => {
+    try { osc.disconnect(); g.disconnect(); } catch { }
+  };
+}
 
 // ===== Fullscreen =====
 function getFsEl() {
@@ -71,6 +115,15 @@ export default function TaskPractice() {
   const [missCount, setMissCount] = useState(0);
 
   const [shuffleKey, setShuffleKey] = useState(0);
+
+  // ===== Beep管理 =====
+  const triggerBaseAtRef = useRef(null);
+  const globalTrigPtrRef = useRef(0);
+  const beepIntervalRef = useRef(null);
+
+  // ===== 持ち越し管理 =====
+  const [carryPending, setCarryPending] = useState(false);
+  const carryPendingRef = useRef(false);
 
   const numbers = useMemo(() => {
     return shuffle(makeNumbers(TOTAL));
@@ -139,6 +192,12 @@ export default function TaskPractice() {
       body.style.width = prevBodyWidth;
       window.removeEventListener("wheel", prevent);
       window.removeEventListener("touchmove", prevent);
+
+      // ★ クリーンアップ時にbeepタイマーを停止
+      if (beepIntervalRef.current) {
+        clearInterval(beepIntervalRef.current);
+        beepIntervalRef.current = null;
+      }
     };
   }, []);
 
@@ -161,6 +220,18 @@ export default function TaskPractice() {
     setTrialStartAt(null);
     setElapsedMs(null);
     setMissCount(0);
+
+    // ★ Beepスケジュール停止
+    if (beepIntervalRef.current) {
+      clearInterval(beepIntervalRef.current);
+      beepIntervalRef.current = null;
+    }
+    triggerBaseAtRef.current = null;
+    globalTrigPtrRef.current = 0;
+
+    // ★ 持ち越し状態をリセット
+    setCarryPending(false);
+    carryPendingRef.current = false;
   }, []);
 
   const handleClick = useCallback(
@@ -180,20 +251,48 @@ export default function TaskPractice() {
           const progress = TOTAL;
 
           setElapsedMs(end - start);
+
+          // ★ TOTAL-5（ミス数が-5以下）で自動次試行
+          setMissCount((m) => {
+            const newMissCount = m;
+            if (newMissCount <= -5) {
+              window.setTimeout(() => {
+                resetTrial();
+              }, 100);
+            }
+            return newMissCount;
+          });
         } else {
-          setNextNumber((n) => n + 1);
+          setNextNumber((n) => {
+            const nextNum = n + 1;
+            // ★ 終わりのCARRY_MARGIN個前に入ったら持ち越し判定
+            if (nextNum > (TOTAL - CARRY_MARGIN)) {
+              carryPendingRef.current = true;
+              setCarryPending(true);
+            }
+            return nextNum;
+          });
         }
       } else {
         // ミスフィードバック
         setFeedback({ num, type: "wrong" });
 
         // ★ミス回数加算
-        setMissCount((m) => m + 1);
+        setMissCount((m) => {
+          const newMissCount = m + 1;
+          // ★ ミス数が-5以下で自動次試行
+          if (newMissCount <= -5) {
+            window.setTimeout(() => {
+              resetTrial();
+            }, 100);
+          }
+          return newMissCount;
+        });
       }
 
       window.setTimeout(() => setFeedback(null), 220);
     },
-    [isStarted, isCompleted, nextNumber, TOTAL, trialStartAt]
+    [isStarted, isCompleted, nextNumber, TOTAL, trialStartAt, resetTrial, CARRY_MARGIN]
   );
 
   return (
@@ -225,11 +324,60 @@ export default function TaskPractice() {
                   setNextNumber(1);
 
                   setTrialStartAt(t0);
+                  triggerBaseAtRef.current = t0; // ★トリガー間隔の基準を設定
 
                   setElapsedMs(null);
                   setMissCount(0);
 
                   setIsStarted(true);
+
+                  // ★ 持ち越し状態をリセット
+                  setCarryPending(false);
+                  carryPendingRef.current = false;
+
+                  // ★ グローバルトリガーポインタもリセット
+                  globalTrigPtrRef.current = 0;
+
+                  if (beepIntervalRef.current) {
+                    clearInterval(beepIntervalRef.current);
+                  }
+
+                  beepIntervalRef.current = setInterval(() => {
+                    // ★ 持ち越し中はビープを鳴らさない
+                    if (carryPendingRef.current) return;
+
+                    const trigger = PRACTICE_TRIGGER_PLAN[globalTrigPtrRef.current];
+                    if (!trigger) return;
+
+                    const sec = trigger; // ★ 直接秒数（配列は秒数の数値）
+                    const baseAt = triggerBaseAtRef.current;
+                    if (!baseAt) return;
+
+                    const elapsedMs = Date.now() - baseAt;
+                    if (elapsedMs < sec * 1000) return;
+
+                    // ===== 持ち越し判定 =====
+                    const shouldCarry = nextNumber > (TOTAL - CARRY_MARGIN);
+
+                    if (shouldCarry) {
+                      carryPendingRef.current = true;
+                      setCarryPending(true);
+                      return;
+                    }
+
+                    // ===== ビープ =====
+                    beep({ durationMs: 220, freq: 1000, gain: 0.35 });
+
+                    globalTrigPtrRef.current += 1;
+
+                    // ★ 配列をループさせる
+                    if (globalTrigPtrRef.current >= PRACTICE_TRIGGER_PLAN.length) {
+                      globalTrigPtrRef.current = 0;
+                    }
+
+                    // ★ 次の間隔は「今」から数える
+                    triggerBaseAtRef.current = Date.now();
+                  }, 50);
                 }}
               >
                 開始
