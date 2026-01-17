@@ -15,6 +15,70 @@ export const TRIGGER_PLAN = [
   { index: 5, intervalSec: 7 },
 ];
 
+// export const TRIGGER_PLAN = [
+//   { index: 1,  intervalSec: 28, Question: "question" },
+//   { index: 2,  intervalSec: 32, Question: "ank1" },
+//   { index: 3,  intervalSec: 26, Question: "question" },
+//   { index: 4,  intervalSec: 35, Question: "23+19" },
+//   { index: 5,  intervalSec: 29, Question: "question" },
+
+//   { index: 6,  intervalSec: 31, Question: "ank2" },
+//   { index: 7,  intervalSec: 27, Question: "31-16" },
+//   { index: 8,  intervalSec: 34, Question: "question" },
+//   { index: 9,  intervalSec: 30, Question: "28-13" },
+//   { index: 10, intervalSec: 33, Question: "question" },
+
+//   { index: 11, intervalSec: 25, Question: "19+24" },
+//   { index: 12, intervalSec: 29, Question: "ank3" },
+//   { index: 13, intervalSec: 35, Question: "question" },
+//   { index: 14, intervalSec: 28, Question: "34-17" },
+//   { index: 15, intervalSec: 32, Question: "question" },
+
+//   { index: 16, intervalSec: 26, Question: "21+27" },
+//   { index: 17, intervalSec: 34, Question: "ank1" },
+//   { index: 18, intervalSec: 30, Question: "17+26" },
+//   { index: 19, intervalSec: 31, Question: "question" },
+//   { index: 20, intervalSec: 27, Question: "29-14" },
+
+//   { index: 21, intervalSec: 33, Question: "ank2" },
+//   { index: 22, intervalSec: 29, Question: "question" },
+//   { index: 23, intervalSec: 35, Question: "18+17" },
+//   { index: 24, intervalSec: 28, Question: "question" },
+//   { index: 25, intervalSec: 30, Question: "27-8" },
+
+//   { index: 26, intervalSec: 26, Question: "question" },
+//   { index: 27, intervalSec: 34, Question: "ank3" },
+//   { index: 28, intervalSec: 31, Question: "32-9" },
+//   { index: 29, intervalSec: 27, Question: "question" },
+//   { index: 30, intervalSec: 32, Question: "24+18" },
+
+//   { index: 31, intervalSec: 29, Question: "question" },
+//   { index: 32, intervalSec: 35, Question: "16+19" },
+//   { index: 33, intervalSec: 28, Question: "ank1" },
+//   { index: 34, intervalSec: 30, Question: "question" },
+//   { index: 35, intervalSec: 26, Question: "question" },
+
+//   { index: 36, intervalSec: 33, Question: "26-18" },
+//   { index: 37, intervalSec: 27, Question: "ank2" },
+//   { index: 38, intervalSec: 34, Question: "question" },
+//   { index: 39, intervalSec: 31, Question: "question" },
+//   { index: 40, intervalSec: 29, Question: "question" },
+
+//   { index: 41, intervalSec: 35, Question: "question" },
+//   { index: 42, intervalSec: 28, Question: "question" },
+//   { index: 43, intervalSec: 32, Question: "question" },
+//   { index: 44, intervalSec: 26, Question: "ank3" },
+//   { index: 45, intervalSec: 30, Question: "question" },
+
+//   { index: 46, intervalSec: 33, Question: "question" },
+//   { index: 47, intervalSec: 27, Question: "question" },
+//   { index: 48, intervalSec: 34, Question: "ank1" },
+//   { index: 49, intervalSec: 29, Question: "ank2" },
+//   { index: 50, intervalSec: 31, Question: "question" },
+// ];
+
+
+
 /**
  * intervals(秒) → 「開始からの累積発火時刻(ms)」へ変換
  * return例: [6000, 15000, 20000, ...]
