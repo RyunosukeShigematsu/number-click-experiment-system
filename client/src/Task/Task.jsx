@@ -8,6 +8,8 @@ const ROOM_ID = "dev-room";
 const EVENTS_URL = "https://shigematsu.nkmr.io/m1_project/api/events.php";
 const AUDIO_UPLOAD_URL = "https://shigematsu.nkmr.io/m1_project/api/upload_audio.php";
 const TASKLOG_UPLOAD_URL = "https://shigematsu.nkmr.io/m1_project/api/upload_tasklog.php";
+const TEXTLOG_UPLOAD_URL = "https://shigematsu.nkmr.io/m1_project/api/upload_textlog.php";
+
 
 
 
@@ -149,10 +151,15 @@ function pickAudioMimeType() {
   return ""; // 指定なしでも動くブラウザが多い
 }
 
+// ===== SpeechRecognition (Web Speech API) =====
+function getSpeechRecognition() {
+  return window.SpeechRecognition || window.webkitSpeechRecognition || null;
+}
+
 
 export default function Task() {
-  const TOTAL = 50;
-  const COLS = 10;
+  const TOTAL = 15;
+  const COLS = 5;
   const GAP = 10;
   const CARRY_MARGIN = 5; // ★終わりの何個前から持ち越しにするか（後で調整）
 
@@ -209,6 +216,19 @@ export default function Task() {
   // ===== Beep回数カウンタ（trialごとにリセット） =====
   const beepCountRef = useRef(0);
 
+  // ===== Beep: TRIGGER_PLAN.index を記録（meta用） =====
+  const beepIndicesRef = useRef([]); // 例: [1,2,5,...]
+
+  // ===== Text events（eventsは text のみ） =====
+  const textEventsRef = useRef([]);  // events に入れる配列（textのみ）
+  const textCountRef = useRef(0);    // meta用
+  const textSeqRef = useRef(0);      // textId用
+
+  // ===== Speech recognition refs =====
+  const speechRecRef = useRef(null);
+  const speechActiveRef = useRef(false);
+
+
   // 1イベント追加（trialをまたいでもOK。trialNoも入れる）
   const addTaskEvent = useCallback((type, payload = {}) => {
     taskEventsRef.current.push({
@@ -222,6 +242,26 @@ export default function Task() {
 
   const recordStopPromiseRef = useRef(null);
 
+  const pushTextEvent = useCallback((text) => {
+    const z = taskZeroTsRef.current;
+    if (z == null) return;
+
+    const now = Date.now();
+    const tRelMs = Math.max(0, now - z);
+
+    textSeqRef.current += 1;
+    textCountRef.current += 1;
+
+    textEventsRef.current.push({
+      type: "text",
+      tRelMs,
+      textId: textSeqRef.current,
+      text,
+    });
+
+    // ★ コンソールに表示（送信されていることを確認）
+    console.log("TEXT_DETECTED", { textId: textSeqRef.current, text, tRelMs });
+  }, []);
 
 
   useEffect(() => {
@@ -273,6 +313,24 @@ export default function Task() {
     }
   }, []);
 
+
+  const uploadTextLog = useCallback(async ({ meta, events }) => {
+    try {
+      const blob = new Blob([JSON.stringify({ meta, events }, null, 2)], {
+        type: "application/json",
+      });
+
+      const fd = new FormData();
+      fd.append("meta", JSON.stringify(meta));
+      fd.append("log", blob, "textLog.json");
+
+      const res = await fetch(TEXTLOG_UPLOAD_URL, { method: "POST", body: fd });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) console.warn("uploadTextLog not ok", res.status, json);
+    } catch (e) {
+      console.warn("uploadTextLog failed", e);
+    }
+  }, []);
 
 
   const startRecording = useCallback(async ({ participant, trialIndex }) => {
@@ -342,6 +400,63 @@ export default function Task() {
       console.warn("startRecording failed", e);
     }
   }, [uploadAudioBlob]);
+
+  const startSpeech = useCallback(() => {
+    const SR = getSpeechRecognition();
+    if (!SR) {
+      console.warn("SpeechRecognition not supported");
+      return;
+    }
+    if (speechActiveRef.current) return;
+
+    const rec = new SR();
+    speechRecRef.current = rec;
+
+    rec.lang = "ja-JP";
+    rec.interimResults = false; // ★eventsはtextだけなのでfinalだけでOK
+    rec.continuous = true;
+
+    rec.onresult = (e) => {
+      try {
+        for (let i = e.resultIndex; i < e.results.length; i++) {
+          const r = e.results[i];
+          if (!r.isFinal) continue;
+          const text = (r?.[0]?.transcript ?? "").trim();
+          if (!text) continue;
+          console.log("SPEECH_RECOGNIZED", { text }); // ★ 検知時にもログ
+          pushTextEvent(text);
+        }
+      } catch (err) {
+        console.warn("speech onresult error", err);
+      }
+    };
+
+    rec.onerror = (e) => console.warn("speech error", e);
+
+    rec.onend = () => {
+      // 勝手に止まるブラウザ対策：開始中なら再開
+      if (speechActiveRef.current) {
+        try { rec.start(); } catch { }
+      }
+    };
+
+    try {
+      rec.start();
+      speechActiveRef.current = true;
+    } catch (e) {
+      console.warn("speech start failed", e);
+    }
+  }, [pushTextEvent]);
+
+  const stopSpeech = useCallback(() => {
+    speechActiveRef.current = false;
+    const rec = speechRecRef.current;
+    if (!rec) return;
+    try { rec.onend = null; } catch { }
+    try { rec.stop(); } catch { }
+    speechRecRef.current = null;
+  }, []);
+
 
   const stopRecording = useCallback(async () => {
     try {
@@ -500,6 +615,23 @@ export default function Task() {
           events: taskEventsRef.current.filter(e => e.type === "click" || e.type === "beep"),
         });
 
+        uploadTextLog({
+  meta: {
+    participant: participantRef.current,
+    trialNo: trialIndexRef.current + 1,
+    status: "aborted",
+    elapsedMs: Date.now() - (trialStartAtRef.current ?? taskZeroTsRef.current),
+    beepCount: beepCountRef.current,
+    beepIndices: beepIndicesRef.current,
+    textCount: textCountRef.current,
+  },
+  events: textEventsRef.current,
+});
+
+// speech停止（可能なら）
+stopSpeech();
+
+
 
       }
 
@@ -568,6 +700,12 @@ export default function Task() {
 
     taskEventsRef.current = [];
 
+    // ★ text log も（ただしtrialごとにリセット） =====
+    textEventsRef.current = [];
+    textCountRef.current = 0;
+    textSeqRef.current = 0;
+    beepIndicesRef.current = [];
+
   }, [isCompleted, elapsedMs, missCount, trialIndex, stopRecording]);
 
   // ===== トライアル開始（この画面になった瞬間）=====
@@ -604,6 +742,9 @@ export default function Task() {
 
       const sec = trigger.intervalSec;
       const triggerNo = trigger.index; // 表示やログ用（1-based）
+
+
+      const beepIndex = trigger.index; // ★metaに入れたい ID（TRIGGER_PLANのindex）
 
 
       const elapsedMs = Date.now() - triggerBaseAt;
@@ -643,8 +784,13 @@ export default function Task() {
 
       triggerTimerRef.current = window.setTimeout(() => {
         beep({ durationMs: 220, freq: 1000, gain: 0.35 });
-        // === beepイベント追加 ===
+        // ★beep回数
         beepCountRef.current += 1;
+
+        // ★beepIndices（TRIGGER_PLAN.index）を保存
+        beepIndicesRef.current.push(beepIndex);
+
+        // === beepイベント追加 ===
         const z = taskZeroTsRef.current;
         if (z != null) {
           const tRelMs = Date.now() - z;
@@ -777,9 +923,25 @@ export default function Task() {
               meta,
               events: taskEventsRef.current.filter(e => e.type === "click" || e.type === "beep"),
             });
-          }
 
-          await stopRecording();
+            await uploadTextLog({
+              meta: {
+                participant,
+                trialNo: trialIndex + 1,
+                status: "completed",
+                elapsedMs: end - start,
+                beepCount: beepCountRef.current,
+                beepIndices: beepIndicesRef.current,
+                textCount: textCountRef.current,
+              },
+              events: textEventsRef.current, // ★textのみ
+            });
+
+            stopSpeech();
+            await stopRecording();
+
+
+          }
 
         } else {
           setNextNumber((n) => n + 1);
@@ -807,6 +969,8 @@ export default function Task() {
       COLS,
       uploadTaskLog,
       stopRecording,
+      uploadTextLog,
+      stopSpeech,
     ]
   );
 
@@ -887,6 +1051,23 @@ export default function Task() {
                   events: taskEventsRef.current.filter(e => e.type === "click" || e.type === "beep"),
                 });
 
+                await uploadTextLog({
+                  meta: {
+                    participant: participantRef.current,
+                    trialNo: trialIndexRef.current + 1,
+                    status: "aborted",
+                    elapsedMs: Date.now() - (trialStartAtRef.current ?? taskZeroTsRef.current),
+                    beepCount: beepCountRef.current,
+                    beepIndices: beepIndicesRef.current,
+                    textCount: textCountRef.current,
+                  },
+                  events: textEventsRef.current,
+                });
+
+                // 中断なので speech は止める
+                stopSpeech();
+
+
 
               }
             }
@@ -930,6 +1111,15 @@ export default function Task() {
                   taskLogUploadedRef.current = false;
                   taskEventsRef.current = [];   // ★これを追加（clickログを必ず新規に）
                   beepCountRef.current = 0;    // ★beep回数もリセット
+
+                  // ===== text / beep index をtrialごとにリセット =====
+                  textEventsRef.current = [];
+                  textCountRef.current = 0;
+                  textSeqRef.current = 0;
+                  beepIndicesRef.current = [];
+
+                  // ===== Speech start =====
+                  startSpeech();
 
                   // ===== 状態初期化 =====
                   setIsCompleted(false);
