@@ -158,10 +158,10 @@ function getSpeechRecognition() {
 
 
 export default function Task() {
-  const TOTAL = 15;
-  const COLS = 5;
+  const TOTAL = 50;
+  const COLS = 10;
   const GAP = 10;
-  const CARRY_MARGIN = 5; // ★終わりの何個前から持ち越しにするか（後で調整）
+  const CARRY_MARGIN = 10; // ★終わりの何個前から持ち越しにするか（後で調整）
 
   const navigate = useNavigate();
 
@@ -534,6 +534,11 @@ export default function Task() {
   const TRIGGER_DELAY_MS = 1000;      // ★ここで遅延量を調整
   const triggerTimerRef = useRef(null); // ★遅延タイマー（溜まり防止）
 
+  // ===== 質問音声再生 =====
+  const questionAudioRef = useRef(null);
+  const questionTimerRef = useRef(null);
+  const QUESTION_DELAY_MS = 6000; // ★ beep から 6秒後に質問音声再生
+
 
   // ===== 配置（シャッフル） =====
   const [shuffleKey, setShuffleKey] = useState(0);
@@ -581,6 +586,16 @@ export default function Task() {
       if (triggerTimerRef.current) {
         window.clearTimeout(triggerTimerRef.current);
         triggerTimerRef.current = null;
+      }
+
+      // ★ 質問音声も停止
+      if (questionTimerRef.current) {
+        window.clearTimeout(questionTimerRef.current);
+        questionTimerRef.current = null;
+      }
+      if (questionAudioRef.current) {
+        questionAudioRef.current.pause();
+        questionAudioRef.current = null;
       }
 
       // ★本当に離脱する時だけ aborted 扱いにする
@@ -693,6 +708,16 @@ stopSpeech();
       triggerTimerRef.current = null;
     }
 
+    // ★ 質問音声も停止
+    if (questionTimerRef.current) {
+      window.clearTimeout(questionTimerRef.current);
+      questionTimerRef.current = null;
+    }
+    if (questionAudioRef.current) {
+      questionAudioRef.current.pause();
+      questionAudioRef.current = null;
+    }
+
     // ===== task log reset (次トライアルへ向けて) =====
     taskZeroTsRef.current = null;
     // taskLogRef.current = [];
@@ -801,6 +826,35 @@ stopSpeech();
           console.log("BEEP", { beepCount: beepCountRef.current, tRelMs });
         }
         triggerTimerRef.current = null;
+
+        // ★ 質問音声を 6秒後に再生
+        if (questionTimerRef.current) {
+          window.clearTimeout(questionTimerRef.current);
+          questionTimerRef.current = null;
+        }
+
+        const trigger = TRIGGER_PLAN[globalTrigPtr];
+        const questionName = trigger?.Question ?? null;
+
+        if (questionName) {
+          questionTimerRef.current = window.setTimeout(() => {
+            // 質問音声ファイルを再生
+            const audioUrl = `/m1_project/app/src/Task/questionAudio/${questionName}.mp3`;
+            
+            if (questionAudioRef.current) {
+              questionAudioRef.current.pause();
+              questionAudioRef.current = null;
+            }
+
+            const audio = new Audio(audioUrl);
+            questionAudioRef.current = audio;
+            audio.play().catch((e) => {
+              console.warn("Failed to play question audio", { questionName, url: audioUrl, error: e });
+            });
+
+            questionTimerRef.current = null;
+          }, QUESTION_DELAY_MS);
+        }
       }, TRIGGER_DELAY_MS);
 
 
