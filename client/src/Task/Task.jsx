@@ -158,10 +158,10 @@ function getSpeechRecognition() {
 
 
 export default function Task() {
-  const TOTAL = 50;
-  const COLS = 10;
+  const TOTAL = 10;
+  const COLS = 5;
   const GAP = 10;
-  const CARRY_MARGIN = 10; // ★終わりの何個前から持ち越しにするか（後で調整）
+  // const CARRY_MARGIN = 10; // ★終わりの何個前から持ち越しにするか（後で調整）
 
   const navigate = useNavigate();
 
@@ -192,13 +192,10 @@ export default function Task() {
 
   const isLeavingRef = useRef(false);
 
-  // ★持ち越しが発生したら、このトライアル中はトリガー処理を止める
-  const [carryPending, setCarryPending] = useState(false);
-
   const hasStartedRef = useRef(false);
 
   // ★即時に止めたいので ref でも持つ（setState反映待ちの隙間を潰す）
-  const carryPendingRef = useRef(false);
+  // const carryPendingRef = useRef(false);
 
   const allTriggersConsumed = globalTrigPtr >= TRIGGER_PLAN.length;
 
@@ -682,7 +679,6 @@ stopSpeech();
     const nextTrial = trialIndex + 1;
 
 
-    setIsStarted(false); // ★次トライアルは開始待ちに戻す  
     setIsCompleted(false);
     setNextNumber(1);
     setShuffleKey((k) => k + 1);
@@ -698,9 +694,6 @@ stopSpeech();
     await stopRecording();
 
     recordStartTsRef.current = null;
-    setTriggerBaseAt(null); // ★次の開始でセットし直す
-    setCarryPending(false); // ★追加（念のため）
-    carryPendingRef.current = false; // ★追加
 
     // ★ 遅延中のビープ/送信が残ってたらキャンセル
     if (triggerTimerRef.current) {
@@ -731,6 +724,8 @@ stopSpeech();
     textSeqRef.current = 0;
     beepIndicesRef.current = [];
 
+    setIsStarted(false);
+
   }, [isCompleted, elapsedMs, missCount, trialIndex, stopRecording]);
 
   // ===== トライアル開始（この画面になった瞬間）=====
@@ -741,21 +736,12 @@ stopSpeech();
 
     const t = Date.now();
     setTrialStartAt(t);
-    setTriggerBaseAt(t); // ★トリガー間隔の基準もtrial開始に
-
-    setCarryPending(false); // ★追加：次トライアル開始で carry解除
-    carryPendingRef.current = false; // ★追加
 
 
   }, [isStarted, trialStartAt, nextNumber]);
 
   useEffect(() => {
-    if (!isStarted) return;
     if (triggerBaseAt == null) return;
-    if (isCompleted) return;
-
-    // ★持ち越し中は、このトライアルでは鳴らさない（次トライアルで再開）
-    if (carryPendingRef.current) return;
 
 
     // 全部使い切ったら何もしない（＝この後は鳴らない）
@@ -774,15 +760,6 @@ stopSpeech();
 
       const elapsedMs = Date.now() - triggerBaseAt;
       if (elapsedMs < sec * 1000) return;
-
-      // ===== 持ち越し判定（終わりのCARRY_MARGIN個前に入ってたら carry）=====
-      const shouldCarry = nextNumber > (TOTAL - CARRY_MARGIN);
-
-      if (shouldCarry) {
-        carryPendingRef.current = true; // ★まずrefで即止め
-        setCarryPending(true);          // ★UI側も止め状態に
-        return;
-      }
 
       // ===== 表示（TRIGGER送信）→ 遅れてビープ（前コードと同じ思想）=====
       unlockAudio();
@@ -868,15 +845,11 @@ stopSpeech();
 
     return () => window.clearInterval(timer);
   }, [
-    isStarted,
     triggerBaseAt,
-    isCompleted,
     globalTrigPtr,
     nextNumber,
     trialIndex,
     TOTAL,
-    CARRY_MARGIN,
-    carryPending, // ★追加
   ]);
 
   useEffect(() => {
@@ -934,10 +907,6 @@ stopSpeech();
           y: pos?.y ?? null,
         });
       }
-
-
-      // 完了後は押せない（進行しない）
-      if (isCompleted) return;
 
       if (num === nextNumber) {
         // 正解フィードバック
@@ -1012,8 +981,6 @@ stopSpeech();
       window.setTimeout(() => setFeedback(null), 220);
     },
     [
-      isStarted,
-      isCompleted,
       nextNumber,
       TOTAL,
       trialStartAt,
@@ -1181,7 +1148,7 @@ stopSpeech();
                   setNextNumber(1);
 
                   setTrialStartAt(t0);
-                  setTriggerBaseAt(t0);
+                  setTriggerBaseAt(prev => (prev == null ? t0 : prev));
 
                   setElapsedMs(null);
                   setMissCount(0);
@@ -1242,6 +1209,7 @@ stopSpeech();
                       isCorrect ? "cell--correct" : "",
                       isWrong ? "cell--wrong" : "",
                     ].filter(Boolean).join(" ")}
+                    disabled={!isStarted || isCompleted}
                     onClick={() => handleClick(num, { x, y })}
                   >
                     {isStarted ? num : ""}
