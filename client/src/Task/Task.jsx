@@ -158,8 +158,8 @@ function getSpeechRecognition() {
 
 
 export default function Task() {
-  const TOTAL = 10;
-  const COLS = 5;
+  const TOTAL = 50;
+  const COLS = 10;
   const GAP = 10;
   // const CARRY_MARGIN = 10; // ★終わりの何個前から持ち越しにするか（後で調整）
 
@@ -534,7 +534,7 @@ export default function Task() {
   // ===== 質問音声再生 =====
   const questionAudioRef = useRef(null);
   const questionTimerRef = useRef(null);
-  const QUESTION_DELAY_MS = 6000; // ★ beep から 6秒後に質問音声再生
+  const QUESTION_DELAY_MS = 46000; // ★ beep から 6秒後に質問音声再生
 
 
   // ===== 配置（シャッフル） =====
@@ -628,20 +628,20 @@ export default function Task() {
         });
 
         uploadTextLog({
-  meta: {
-    participant: participantRef.current,
-    trialNo: trialIndexRef.current + 1,
-    status: "aborted",
-    elapsedMs: Date.now() - (trialStartAtRef.current ?? taskZeroTsRef.current),
-    beepCount: beepCountRef.current,
-    beepIndices: beepIndicesRef.current,
-    textCount: textCountRef.current,
-  },
-  events: textEventsRef.current,
-});
+          meta: {
+            participant: participantRef.current,
+            trialNo: trialIndexRef.current + 1,
+            status: "aborted",
+            elapsedMs: Date.now() - (trialStartAtRef.current ?? taskZeroTsRef.current),
+            beepCount: beepCountRef.current,
+            beepIndices: beepIndicesRef.current,
+            textCount: textCountRef.current,
+          },
+          events: textEventsRef.current,
+        });
 
-// speech停止（可能なら）
-stopSpeech();
+        // speech停止（可能なら）
+        stopSpeech();
 
 
 
@@ -667,6 +667,8 @@ stopSpeech();
   // リセット：NEXTを1に戻して、配置もランダムにし直す
   const resetTrial = useCallback(async () => {
     hasStartedRef.current = false;
+    stopSpeech();          // ★追加（保険）
+    await stopRecording(); // 既にあるならそのままでOK
     // ★ 完了済みなら、今回の記録を履歴の先頭へ（最大5件）
     if (isCompleted && elapsedMs != null) {
       setHistory((prev) => {
@@ -817,7 +819,7 @@ stopSpeech();
           questionTimerRef.current = window.setTimeout(() => {
             // 質問音声ファイルを再生
             const audioUrl = `/m1_project/app/public/questionAudio/${questionName}.mp3`;
-            
+
             if (questionAudioRef.current) {
               questionAudioRef.current.pause();
               questionAudioRef.current = null;
@@ -960,8 +962,8 @@ stopSpeech();
               events: textEventsRef.current, // ★textのみ
             });
 
-            stopSpeech();
-            await stopRecording();
+            // stopSpeech();
+            // await stopRecording();
 
 
           }
@@ -1226,17 +1228,17 @@ stopSpeech();
                 type="button"
                 className="next-trial-button"
                 onClick={async () => {
+                  recordStatusRef.current = "completed";
+                  stopSpeech();
+                  await stopRecording();
+
                   if (!allTriggersConsumed) {
-                    resetTrial();
+                    await resetTrial();   // resetTrial内でstopRecordingしててもOK（2回目は何もしない）
                     return;
                   }
 
-                  // ★終了：最後のトライアルは完了済みなので録音も基本止まってるはずだが念のため
-                  recordStatusRef.current = "completed";
-                  await stopRecording();
+                  // ★終了：Completed画面へ
                   await new Promise((r) => setTimeout(r, 800));
-
-                  // Completed画面へ
                   navigate("/Completed", { replace: true });
                 }}
               >
