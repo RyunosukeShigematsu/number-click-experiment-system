@@ -26,11 +26,21 @@ export default function StimulusP5({
       const BASE_SIZE = 70;
       const BIG_SIZE = BASE_SIZE * 1.5; // ← 強調サイズ（調整可）
 
+      // ★ time 用の内部状態
+      let currentRight = right;
+      let lastTick = 0;
+
+
       p.setup = () => {
         p.createCanvas(width, height);
         p.noStroke();
         p.textAlign(p.CENTER, p.CENTER);
         p.textFont("monospace");
+        // ★ 初期化（props が文字列なので number に）
+        if (type === "time") {
+          currentRight = Number(right);
+          lastTick = p.millis();
+        }
       };
 
       p.draw = () => {
@@ -46,6 +56,15 @@ export default function StimulusP5({
         p.fill(255);
         p.noStroke();
 
+        // ===== 1秒ごとに left を増やす =====
+        if (type === "time") {
+          const now = p.millis();
+          if (now - lastTick >= 1000) {
+            currentRight += 1;
+            lastTick += 1000;
+          }
+        }
+
         const centerX = width / 2;
         const centerY = height / 2;
 
@@ -54,7 +73,7 @@ export default function StimulusP5({
         const rightX = width * 0.67;
 
         // ★ Y位置：強調時は中央、非強調時は下げる
-        const offsetY =  8; // ★ 下げる量を調整可能
+        const offsetY = 8; // ★ 下げる量を調整可能
         const leftY = emphasize === "right" ? centerY + offsetY : centerY;
         const rightY = emphasize === "left" ? centerY + offsetY : centerY;
 
@@ -86,8 +105,13 @@ export default function StimulusP5({
         p.textSize(
           emphasize === "right" ? BIG_SIZE : BASE_SIZE
         );
-        p.text(right, rightX, rightY);
-
+        p.text(
+          type === "time"
+            ? String(currentRight).padStart(2, "0")
+            : right,
+          rightX,
+          rightY
+        );
         // ===== ":"（時刻のみ・サイズは常にベース）=====
         if (type === "time") {
           p.textSize(BASE_SIZE);

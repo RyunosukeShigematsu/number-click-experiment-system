@@ -839,7 +839,7 @@ stopSpeech();
         if (questionName) {
           questionTimerRef.current = window.setTimeout(() => {
             // 質問音声ファイルを再生
-            const audioUrl = `/m1_project/app/src/Task/questionAudio/${questionName}.mp3`;
+            const audioUrl = `/m1_project/app/public/questionAudio/${questionName}.mp3`;
             
             if (questionAudioRef.current) {
               questionAudioRef.current.pause();
