@@ -77,9 +77,9 @@
 // ];
 
 
-export const STIMULUS_PLAN = [
+export const STIMULUS_PLAN_A = [
   { index: 0,  left: "18", right: "74", type: "number", emphasize: "normal", Question: "22+29" }, // Calc
-  { index: 1,  left: "01", right: "10", type: "time",   emphasize: "right",  Question: "35-18" }, // Calc
+  { index: 1,  left: "01", right: "20", type: "time",   emphasize: "right",  Question: "35-18" }, // Calc
   { index: 2,  left: "02", right: "45", type: "time",   emphasize: "normal", Question: "question" }, // CN
 
 //   { index: 3,  left: "45", right: "87", type: "number", emphasize: "left",   Question: "ank2" }, // Ank2
@@ -118,3 +118,38 @@ export const STIMULUS_PLAN = [
 //   { index: 28, left: "57", right: "82", type: "number", emphasize: "left",   Question: "26-18" }, // Calc
 //   { index: 29, left: "58", right: "25", type: "time",   emphasize: "right",  Question: "ank3" }, // Ank3
 ];
+
+
+export const STIMULUS_PLAN = [
+  { index: 0,  left: "18", right: "74", type: "number", emphasize: "normal", Question: "22+29" }, // Calc
+  { index: 1,  left: "01", right: "20", type: "time",   emphasize: "left",   Question: "35-18" }, // Calc
+  { index: 2,  left: "02", right: "45", type: "time",   emphasize: "right",  Question: "question" }, // CS
+  { index: 3,  left: "45", right: "87", type: "number", emphasize: "normal", Question: "14+27" }, // Calc
+  { index: 4,  left: "05", right: "21", type: "time",   emphasize: "left",   Question: "ank1" }, // Ank1
+  { index: 5,  left: "63", right: "29", type: "number", emphasize: "right",  Question: "33-15" }, // Calc
+  { index: 6,  left: "09", right: "12", type: "time",   emphasize: "left",   Question: "question" }, // CM
+  { index: 7,  left: "70", right: "19", type: "number", emphasize: "normal", Question: "ank3" }, // Ank3
+  { index: 8,  left: "13", right: "30", type: "time",   emphasize: "left",   Question: "18+17" }, // Calc
+  { index: 9,  left: "32", right: "56", type: "number", emphasize: "left",   Question: "question" }, // NE (L)
+  { index: 10, left: "18", right: "28", type: "time",   emphasize: "normal", Question: "question" }, // CN
+  { index: 11, left: "79", right: "21", type: "number", emphasize: "normal", Question: "ank2" }, // Ank2
+  { index: 12, left: "68", right: "41", type: "number", emphasize: "right",  Question: "41-23" }, // Calc
+  { index: 13, left: "23", right: "12", type: "time",   emphasize: "right",  Question: "19+28" }, // Calc
+  { index: 14, left: "25", right: "90", type: "number", emphasize: "normal", Question: "question" }, // NN
+  { index: 15, left: "27", right: "52", type: "time",   emphasize: "left",   Question: "30-14" }, // Calc
+  { index: 16, left: "52", right: "16", type: "number", emphasize: "right",  Question: "24+16" }, // Calc
+  { index: 17, left: "33", right: "40", type: "time",   emphasize: "right",  Question: "question" }, // CS
+  { index: 18, left: "84", right: "37", type: "number", emphasize: "left",   Question: "28-13" }, // Calc
+  { index: 19, left: "59", right: "73", type: "number", emphasize: "right",  Question: "question" }, // NE (R)
+  { index: 20, left: "38", right: "15", type: "time",   emphasize: "normal", Question: "ank1" }, // Ank1
+  { index: 21, left: "26", right: "65", type: "number", emphasize: "normal", Question: "19+24" }, // Calc
+  { index: 22, left: "44", right: "32", type: "time",   emphasize: "left",   Question: "question" }, // CM
+  { index: 23, left: "46", right: "21", type: "time",   emphasize: "right",  Question: "34-17" }, // Calc
+  { index: 24, left: "91", right: "48", type: "number", emphasize: "left",   Question: "ank3" }, // Ank3
+  { index: 25, left: "51", right: "36", type: "time",   emphasize: "right",  Question: "23+19" }, // Calc
+  { index: 26, left: "34", right: "80", type: "number", emphasize: "normal", Question: "question" }, // NN
+  { index: 27, left: "53", right: "10", type: "time",   emphasize: "normal", Question: "question" }, // CN
+  { index: 28, left: "57", right: "82", type: "number", emphasize: "right",  Question: "ank2" }, // Ank2
+  { index: 29, left: "58", right: "25", type: "time",   emphasize: "left",   Question: "26-18" }, // Calc
+];
+

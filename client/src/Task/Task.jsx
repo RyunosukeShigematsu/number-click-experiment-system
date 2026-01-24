@@ -9,6 +9,8 @@ const EVENTS_URL = "https://shigematsu.nkmr.io/m1_project/api/events.php";
 const AUDIO_UPLOAD_URL = "https://shigematsu.nkmr.io/m1_project/api/upload_audio.php";
 const TASKLOG_UPLOAD_URL = "https://shigematsu.nkmr.io/m1_project/api/upload_tasklog.php";
 const TEXTLOG_UPLOAD_URL = "https://shigematsu.nkmr.io/m1_project/api/upload_textlog.php";
+const QUESTION_CLIP_UPLOAD_URL = "https://shigematsu.nkmr.io/m1_project/api/upload_question_clip.php";
+
 
 
 
@@ -165,8 +167,8 @@ function getSpeechRecognition() {
 
 
 export default function Task() {
-  const TOTAL = 10;
-  const COLS = 5;
+  const TOTAL = 50;
+  const COLS = 10;
   const GAP = 10;
   // const CARRY_MARGIN = 10; // ★終わりの何個前から持ち越しにするか（後で調整）
 
@@ -412,103 +414,196 @@ export default function Task() {
 
   }, []);
 
-
-  const startRecording = useCallback(async ({ participant, trialIndex }) => {
+  const uploadQuestionClipBlob = useCallback(async (blob, meta) => {
     try {
-      const cur = recorderRef.current;
-      if (cur && cur.state !== "inactive") return;
+      const fd = new FormData();
+      fd.append("audio", blob, "question_clip.webm");
+      fd.append("meta", JSON.stringify(meta));
 
-      // ① マイク取得（ノイキャンOFF）
-      const micStream = await navigator.mediaDevices.getUserMedia({
-        audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false }
-      });
-      mediaStreamRef.current = micStream;
+      const res = await fetch(QUESTION_CLIP_UPLOAD_URL, { method: "POST", body: fd });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) console.warn("uploadQuestionClipBlob not ok", res.status, json);
+    } catch (e) {
+      console.warn("uploadQuestionClipBlob failed", e);
+    }
+  }, []);
 
-      // ② AudioContext / ミックス先を用意
+  const clipRecRef = useRef(null);
+  const clipChunksRef = useRef([]);
+  const clipBusyRef = useRef(false);
+
+  const recordQuestionClip = useCallback(async ({
+    participant,
+    triggerIndex,        // globalTrigPtr（0-based）
+    questionName,
+    windowStartRelMs = -1000,
+    windowEndRelMs = 20000,
+  }) => {
+    // 二重起動防止
+    if (clipBusyRef.current) return;
+    clipBusyRef.current = true;
+
+    try {
       const ctx = ensureAudio();
       if (!ctx) throw new Error("AudioContext not available");
       if (ctx.state === "suspended") await ctx.resume().catch(() => { });
 
-      // destination（録音用ミックス）
-      const dest = ctx.createMediaStreamDestination();
-      mixDestRef.current = dest;
+      const dest = mixDestRef.current;
+      if (!dest?.stream) {
+        console.warn("recordQuestionClip: mixDest not ready");
+        return;
+      }
 
-      // mic → (gain) → dest
-      const micSrc = ctx.createMediaStreamSource(micStream);
-      micSourceRef.current = micSrc;
-
-      const micGain = ctx.createGain();
-      micGain.gain.value = 1.0; // 必要なら調整
-      micGainRef.current = micGain;
-
-      micSrc.connect(micGain);
-      micGain.connect(dest);
-
-      // app sounds（beep/質問）→ sysGain → dest
-      const sysGain = ctx.createGain();
-      sysGain.gain.value = 0.8; // PC音の録音レベル調整用
-      sysGainRef.current = sysGain;
-      sysGain.connect(dest);
-
-      // ③ ここが重要：録音対象は micStream ではなく dest.stream
-      chunksRef.current = [];
       const mimeType = pickAudioMimeType();
       const rec = new MediaRecorder(dest.stream, mimeType ? { mimeType } : undefined);
-      recorderRef.current = rec;
 
-      recordStartTsRef.current = Date.now();
+      clipRecRef.current = rec;
+      clipChunksRef.current = [];
 
-      rec.ondataavailable = (e) => {
-        if (e.data && e.data.size > 0) chunksRef.current.push(e.data);
-      };
+      const clipStartTs = Date.now();
 
-      recordStopPromiseRef.current = new Promise((resolve) => {
+      const stopPromise = new Promise((resolve) => {
+        rec.ondataavailable = (e) => {
+          if (e.data && e.data.size > 0) clipChunksRef.current.push(e.data);
+        };
         rec.onstop = async () => {
           try {
-            // mic停止
-            try { mediaStreamRef.current?.getTracks()?.forEach((t) => t.stop()); } catch { }
-            mediaStreamRef.current = null;
+            const clipEndTs = Date.now();
+            const blob = new Blob(clipChunksRef.current, { type: rec.mimeType || "audio/webm" });
+            clipChunksRef.current = [];
 
-            // ノードを切る（次回のため）
-            try { micSourceRef.current?.disconnect(); } catch { }
-            try { micGainRef.current?.disconnect(); } catch { }
-            try { sysGainRef.current?.disconnect(); } catch { }
-            micSourceRef.current = null;
-            micGainRef.current = null;
-            sysGainRef.current = null;
-            mixDestRef.current = null;
-
-            const endTs = Date.now();
-            const startTs = recordStartTsRef.current;
-            const durationMs = typeof startTs === "number" ? Math.max(0, endTs - startTs) : null;
-
-            const blob = new Blob(chunksRef.current, { type: rec.mimeType || "audio/webm" });
-            chunksRef.current = [];
-
-            await uploadAudioBlob(blob, {
+            await uploadQuestionClipBlob(blob, {
               participant,
-              trialNo: trialIndex + 1,
-              status: recordStatusRef.current,
-              startTs: startTs ?? null,
-              endTs,
-              durationMs,
+              index: triggerIndex,          // ★ PHPが読むのは index
+              question: questionName,       // ★ PHPが読むのは question
+              clipStartTs,
+              clipEndTs,
+              durationMs: Math.max(0, clipEndTs - clipStartTs),
+              windowStartRelMs,
+              windowEndRelMs,
             });
-
-            recorderRef.current = null;
           } catch (e) {
-            console.warn("rec.onstop failed", e);
+            console.warn("clip rec.onstop failed", e);
           } finally {
+            clipRecRef.current = null;
             resolve();
-            recordStopPromiseRef.current = null;
           }
         };
       });
+ 
+      rec.start(); // timeslice不要（短いので）
+      const clipLenMs = (windowEndRelMs - windowStartRelMs); // 16000ms想定
+      window.setTimeout(() => {
+        try {
+          if (rec.state !== "inactive") rec.stop();
+        } catch { }
+      }, clipLenMs);
 
-      rec.start(1000);
+      await stopPromise;
     } catch (e) {
-      console.warn("startRecording failed", e);
+      console.warn("recordQuestionClip failed", e);
+    } finally {
+      clipBusyRef.current = false;
     }
-  }, [uploadAudioBlob]);
+  }, [uploadQuestionClipBlob]);
+
+const ensureAudioGraph = useCallback(async () => {
+  const ctx = ensureAudio();
+  if (!ctx) throw new Error("AudioContext not available");
+  if (ctx.state === "suspended") await ctx.resume().catch(() => {});
+
+  // もうdestがあるなら再利用（ここが命）
+  if (mixDestRef.current?.stream && sysGainRef.current && micSourceRef.current) return;
+
+  // まだマイク取ってなければ取る（1回だけ）
+  if (!mediaStreamRef.current) {
+    const micStream = await navigator.mediaDevices.getUserMedia({
+      audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false }
+    });
+    mediaStreamRef.current = micStream;
+  }
+
+  // destination（録音用ミックス）を作って保持
+  const dest = ctx.createMediaStreamDestination();
+  mixDestRef.current = dest;
+
+  // mic → micGain → dest
+  const micSrc = ctx.createMediaStreamSource(mediaStreamRef.current);
+  micSourceRef.current = micSrc;
+
+  const micGain = ctx.createGain();
+  micGain.gain.value = 1.0;
+  micGainRef.current = micGain;
+
+  micSrc.connect(micGain);
+  micGain.connect(dest);
+
+  // app sounds → sysGain → dest
+  const sysGain = ctx.createGain();
+  sysGain.gain.value = 0.5;
+  sysGainRef.current = sysGain;
+  sysGain.connect(dest);
+}, []);
+
+
+  const startRecording = useCallback(async ({ participant, trialIndex }) => {
+  try {
+    const cur = recorderRef.current;
+    if (cur && cur.state !== "inactive") return;
+
+    await ensureAudioGraph(); // ★ここが重要
+
+    const dest = mixDestRef.current;
+    if (!dest?.stream) {
+      console.warn("startRecording: mixDest not ready");
+      return;
+    }
+
+    chunksRef.current = [];
+    const mimeType = pickAudioMimeType();
+    const rec = new MediaRecorder(dest.stream, mimeType ? { mimeType } : undefined);
+    recorderRef.current = rec;
+
+    recordStartTsRef.current = Date.now();
+
+    rec.ondataavailable = (e) => {
+      if (e.data && e.data.size > 0) chunksRef.current.push(e.data);
+    };
+
+    recordStopPromiseRef.current = new Promise((resolve) => {
+      rec.onstop = async () => {
+        try {
+          const endTs = Date.now();
+          const startTs = recordStartTsRef.current;
+          const durationMs = typeof startTs === "number" ? Math.max(0, endTs - startTs) : null;
+
+          const blob = new Blob(chunksRef.current, { type: rec.mimeType || "audio/webm" });
+          chunksRef.current = [];
+
+          await uploadAudioBlob(blob, {
+            participant,
+            trialNo: trialIndex + 1,
+            status: recordStatusRef.current,
+            startTs: startTs ?? null,
+            endTs,
+            durationMs,
+          });
+        } catch (e) {
+          console.warn("rec.onstop failed", e);
+        } finally {
+          recorderRef.current = null;
+          recordStopPromiseRef.current = null;
+          resolve();
+        }
+      };
+    });
+
+    rec.start(1000);
+  } catch (e) {
+    console.warn("startRecording failed", e);
+  }
+}, [ensureAudioGraph, uploadAudioBlob]);
+
 
 
 
@@ -559,6 +654,20 @@ export default function Task() {
     }
   }, [pushTextEvent]);
 
+    const hardStopAudioGraph = useCallback(() => {
+    try { mediaStreamRef.current?.getTracks()?.forEach((t) => t.stop()); } catch { }
+    mediaStreamRef.current = null;
+
+    try { micSourceRef.current?.disconnect(); } catch { }
+    try { micGainRef.current?.disconnect(); } catch { }
+    try { sysGainRef.current?.disconnect(); } catch { }
+
+    micSourceRef.current = null;
+    micGainRef.current = null;
+    sysGainRef.current = null;
+    mixDestRef.current = null;
+  }, []);
+
   const stopSpeech = useCallback(() => {
     speechActiveRef.current = false;
     const rec = speechRecRef.current;
@@ -568,18 +677,24 @@ export default function Task() {
     speechRecRef.current = null;
   }, []);
 
-
-  const stopRecording = useCallback(async () => {
+  const stopRecording = useCallback(async ({ hard = false } = {}) => {
     try {
       const rec = recorderRef.current;
-      if (!rec) return;
+      if (!rec) {
+        if (hard) hardStopAudioGraph();
+        return;
+      }
       const p = recordStopPromiseRef.current;
-      if (rec.state !== "inactive") rec.stop(); // recording / paused をまとめて止める
-      if (p) await p; // ★ ここが重要
+      if (rec.state !== "inactive") rec.stop();
+      if (p) await p;
+
+      // ★ここでだけ“完全停止”
+      if (hard) hardStopAudioGraph();
     } catch (e) {
       console.warn("stopRecording failed", e);
     }
-  }, []);
+  }, [hardStopAudioGraph]);
+
 
   useEffect(() => {
     const onBeforeUnload = () => {
@@ -649,7 +764,7 @@ export default function Task() {
   const questionAudioRef = useRef(null);
   const questionNodeRef = useRef(null);
   const questionTimerRef = useRef(null);
-  const QUESTION_DELAY_MS = 10000; // ★ beep から 6秒後に質問音声再生
+  const QUESTION_DELAY_MS = 5000; // ★ beep から 6秒後に質問音声再生
 
 
   // ===== 配置（シャッフル） =====
@@ -783,7 +898,7 @@ export default function Task() {
 
       // stopRecording();
       (async () => {
-        await stopRecording();
+        await stopRecording({ hard: true });
       })();
 
     };
@@ -909,14 +1024,14 @@ export default function Task() {
           endUnlockTimerRef.current = null;
         }
 
-        // ★希望どおり：トリガー発火から QUESTION_DELAY_MS + 20秒
-        const WAIT_MS = QUESTION_DELAY_MS + 20_000;
+        // ★希望どおり：トリガー発火から QUESTION_DELAY_MS + 30秒
+        const WAIT_MS = QUESTION_DELAY_MS + 30_000;
 
-        // ※もし「質問音声が鳴ってから20秒」にしたいなら ↓ に変える
-        // const WAIT_MS = TRIGGER_DELAY_MS + QUESTION_DELAY_MS + 20_000;
+        // ※もし「質問音声が鳴ってから30秒」にしたいなら ↓ に変える
+        // const WAIT_MS = TRIGGER_DELAY_MS + QUESTION_DELAY_MS + 30_000;
 
         endUnlockTimerRef.current = window.setTimeout(() => {
-          console.log("[END UNLOCKED AFTER QUESTION + 20s]", {
+          console.log("[END UNLOCKED AFTER QUESTION + 30s]", {
             at: Date.now(),
           });
 
@@ -978,6 +1093,19 @@ export default function Task() {
         const questionName = trigger?.Question ?? null;
 
         if (questionName) {
+          // ★ クリップ録音：質問の直前1秒〜15秒後
+          const CLIP_START_DELAY = Math.max(0, QUESTION_DELAY_MS - 1000); // 直前1秒
+          window.setTimeout(() => {
+            recordQuestionClip({
+              participant,
+              triggerIndex: globalTrigPtr, // このトリガーのID（0-based）
+              questionName,
+              windowStartRelMs: -1000,
+              windowEndRelMs: 20000,
+            });
+          }, CLIP_START_DELAY);
+
+          // ★ 質問音声自体は既存どおり QUESTION_DELAY_MS で再生
           questionTimerRef.current = window.setTimeout(() => {
             // 質問音声ファイルを再生
             const audioUrl = `/m1_project/app/public/questionAudio/${questionName}.mp3`;
@@ -1028,6 +1156,9 @@ export default function Task() {
     trialIndex,
     TOTAL,
   ]);
+
+
+
 
   useEffect(() => {
     const onFsChange = () => {
@@ -1222,7 +1353,7 @@ export default function Task() {
 
             // 中断扱いで止める
             recordStatusRef.current = "aborted";
-            await stopRecording();
+            await stopRecording({ hard: true });
 
             // ===== task log upload (aborted) =====
             if (!taskLogUploadedRef.current) {
@@ -1426,14 +1557,15 @@ export default function Task() {
                   await stopRecording();
 
                   // ★ここが重要：
-                  // 終了できるのは「全トリガー消費」かつ「質問+20秒経過」の時だけ
+                  // 終了できるのは「全トリガー消費」かつ「質問+30秒経過」の時だけ
                   if (allTriggersConsumed && endUnlocked) {
+                    await stopRecording({ hard: true });
                     await new Promise((r) => setTimeout(r, 800));
                     navigate("/Completed", { replace: true });
                     return;
                   }
 
-                  // ★それ以外（質問前 / 質問+20秒前 / そもそも未消費）は次トライアルへ
+                  // ★それ以外（質問前 / 質問+30秒前 / そもそも未消費）は次トライアルへ
                   await resetTrial();
                   suppressMediaStopRef.current = false;
                 }}

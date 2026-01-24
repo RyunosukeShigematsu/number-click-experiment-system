@@ -89,7 +89,7 @@
 //   { index: 49, intervalSec: 31, Question: "21+27" },
 // ];
 
-// export const TRIGGER_PLAN = [
+// export const TRIGGER_PLAN_A = [
 //   { index: 0,  intervalSec: 120,  Question: "22+29" },
 //   { index: 1,  intervalSec: 120, Question: "35-18" },
 //   { index: 2,  intervalSec: 120, Question: "question" },
@@ -122,10 +122,48 @@
 //   { index: 29, intervalSec: 120, Question: "ank3" },
 // ];
 
+//B
+
+
+//C
 export const TRIGGER_PLAN = [
-  { index: 0,  intervalSec: 5,  Question: "22+29" },
-  { index: 1,  intervalSec: 20, Question: "35-18" },
-  { index: 2,  intervalSec: 20, Question: "question" },
+  { index: 0,  intervalSec: 10, Question: "22+29" },
+  { index: 1,  intervalSec: 10, Question: "35-18" },
+  { index: 2,  intervalSec: 10, Question: "question" },
+  { index: 3,  intervalSec: 10, Question: "14+27" },
+  { index: 4,  intervalSec: 10, Question: "ank1" },
+  { index: 5,  intervalSec: 10, Question: "33-15" },
+  { index: 6,  intervalSec: 10, Question: "question" },
+  { index: 7,  intervalSec: 10, Question: "ank3" },
+  { index: 8,  intervalSec: 10, Question: "18+17" },
+  { index: 9,  intervalSec: 10, Question: "question" },
+  { index: 10, intervalSec: 10, Question: "question" },
+  { index: 11, intervalSec: 10, Question: "ank2" },
+  { index: 12, intervalSec: 10, Question: "41-23" },
+  { index: 13, intervalSec: 10, Question: "19+28" },
+  { index: 14, intervalSec: 10, Question: "question" },
+  { index: 15, intervalSec: 10, Question: "30-14" },
+  { index: 16, intervalSec: 10, Question: "24+16" },
+  { index: 17, intervalSec: 10, Question: "question" },
+  { index: 18, intervalSec: 10, Question: "28-13" },
+  { index: 19, intervalSec: 10, Question: "question" },
+  { index: 20, intervalSec: 10, Question: "ank1" },
+  { index: 21, intervalSec: 10, Question: "19+24" },
+  { index: 22, intervalSec: 10, Question: "question" },
+  { index: 23, intervalSec: 10, Question: "34-17" },
+  { index: 24, intervalSec: 10, Question: "ank3" },
+  { index: 25, intervalSec: 10, Question: "23+19" },
+  { index: 26, intervalSec: 10, Question: "question" },
+  { index: 27, intervalSec: 10, Question: "question" },
+  { index: 28, intervalSec: 10, Question: "ank2" },
+  { index: 29, intervalSec: 10, Question: "26-18" },
+];
+
+
+// export const TRIGGER_PLAN_tamesi = [
+//   { index: 0,  intervalSec: 5,  Question: "22+29" },
+//   { index: 1,  intervalSec: 30, Question: "35-18" },
+//   { index: 2,  intervalSec: 30, Question: "question" },
   // { index: 3,  intervalSec: 10, Question: "ank2" },
   // { index: 4,  intervalSec: 10, Question: "14+27" },
   // { index: 5,  intervalSec: 10, Question: "question" },
@@ -153,7 +191,7 @@ export const TRIGGER_PLAN = [
   // { index: 27, intervalSec: 10, Question: "question" },
   // { index: 28, intervalSec: 10, Question: "26-18" },
   // { index: 29, intervalSec: 10, Question: "ank3" },
-];
+// ];
 
 /**
  * intervals(秒) → 「開始からの累積発火時刻(ms)」へ変換
