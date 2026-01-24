@@ -60,11 +60,10 @@ async function unlockAudio() {
   }
 }
 
-function beep({ durationMs = 120, freq = 880, gain = 0.12 } = {}) {
+function beep({ durationMs = 120, freq = 880, gain = 0.12, toMix = null } = {}) {
   const ctx = ensureAudio();
   if (!ctx) return;
 
-  // 念のため（環境によっては必要）
   if (ctx.state === "suspended") ctx.resume().catch(() => { });
 
   const t0 = ctx.currentTime;
@@ -79,7 +78,14 @@ function beep({ durationMs = 120, freq = 880, gain = 0.12 } = {}) {
   g.gain.exponentialRampToValueAtTime(0.0001, t0 + durationMs / 1000);
 
   osc.connect(g);
+
+  // ① いつも通りスピーカーへ
   g.connect(ctx.destination);
+
+  // ② 追加：録音ミックスへ（あれば）
+  if (toMix) {
+    try { g.connect(toMix); } catch { }
+  }
 
   osc.start(t0);
   osc.stop(t0 + durationMs / 1000 + 0.02);
@@ -88,6 +94,7 @@ function beep({ durationMs = 120, freq = 880, gain = 0.12 } = {}) {
     try { osc.disconnect(); g.disconnect(); } catch { }
   };
 }
+
 
 
 // ===== Fullscreen =====
@@ -184,6 +191,16 @@ export default function Task() {
   const mediaStreamRef = useRef(null);
   const recorderRef = useRef(null);
   const chunksRef = useRef([]);
+
+
+  // ===== Internal Mix (mic + app sounds) =====
+  const mixDestRef = useRef(null);        // MediaStreamDestination
+  const micSourceRef = useRef(null);      // MediaStreamSource
+  const sysGainRef = useRef(null);        // app sounds gain（beep/question）
+  const micGainRef = useRef(null);        // mic gain（必要なら）
+  const questionBufRef = useRef(new Map()); // (optional) decoded AudioBuffer cache
+
+
 
   const recordStartTsRef = useRef(null);
 
@@ -359,74 +376,141 @@ export default function Task() {
     }
   }, []);
 
+  const playQuestionAudio = useCallback(async (url) => {
+    const ctx = ensureAudio();
+    if (!ctx) throw new Error("AudioContext not available");
+    if (ctx.state === "suspended") await ctx.resume().catch(() => { });
+
+    // 既存再生があれば止める
+    if (questionAudioRef.current) {
+      try { questionAudioRef.current.stop?.(); } catch { }
+      questionAudioRef.current = null;
+    }
+
+    // fetch → decode（キャッシュすると軽い）
+    let buf = questionBufRef.current.get(url);
+    if (!buf) {
+      const res = await fetch(url);
+      const arr = await res.arrayBuffer();
+      buf = await ctx.decodeAudioData(arr);
+      questionBufRef.current.set(url, buf);
+    }
+
+    const src = ctx.createBufferSource();
+    src.buffer = buf;
+
+    // 録音ミックスにも出す（あれば）
+    const sysGain = sysGainRef.current;
+    if (sysGain) src.connect(sysGain);
+
+    src.start();
+    questionNodeRef.current = src;
+
+    src.onended = () => {
+      if (questionNodeRef.current === src) questionNodeRef.current = null;
+    };
+
+  }, []);
+
 
   const startRecording = useCallback(async ({ participant, trialIndex }) => {
     try {
       const cur = recorderRef.current;
-      if (cur && cur.state !== "inactive") return; // recording / paused は全部弾く
+      if (cur && cur.state !== "inactive") return;
 
+      // ① マイク取得（ノイキャンOFF）
+      const micStream = await navigator.mediaDevices.getUserMedia({
+        audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false }
+      });
+      mediaStreamRef.current = micStream;
 
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      mediaStreamRef.current = stream;
+      // ② AudioContext / ミックス先を用意
+      const ctx = ensureAudio();
+      if (!ctx) throw new Error("AudioContext not available");
+      if (ctx.state === "suspended") await ctx.resume().catch(() => { });
 
+      // destination（録音用ミックス）
+      const dest = ctx.createMediaStreamDestination();
+      mixDestRef.current = dest;
+
+      // mic → (gain) → dest
+      const micSrc = ctx.createMediaStreamSource(micStream);
+      micSourceRef.current = micSrc;
+
+      const micGain = ctx.createGain();
+      micGain.gain.value = 1.0; // 必要なら調整
+      micGainRef.current = micGain;
+
+      micSrc.connect(micGain);
+      micGain.connect(dest);
+
+      // app sounds（beep/質問）→ sysGain → dest
+      const sysGain = ctx.createGain();
+      sysGain.gain.value = 0.8; // PC音の録音レベル調整用
+      sysGainRef.current = sysGain;
+      sysGain.connect(dest);
+
+      // ③ ここが重要：録音対象は micStream ではなく dest.stream
       chunksRef.current = [];
       const mimeType = pickAudioMimeType();
-
-      const rec = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
+      const rec = new MediaRecorder(dest.stream, mimeType ? { mimeType } : undefined);
       recorderRef.current = rec;
 
-      // ★追加：録音開始時刻（epoch ms）
       recordStartTsRef.current = Date.now();
 
       rec.ondataavailable = (e) => {
         if (e.data && e.data.size > 0) chunksRef.current.push(e.data);
       };
 
-      // ★ Promiseをセット（stopRecordingがawaitできるように）
       recordStopPromiseRef.current = new Promise((resolve) => {
         rec.onstop = async () => {
           try {
-            // ① mic停止
+            // mic停止
             try { mediaStreamRef.current?.getTracks()?.forEach((t) => t.stop()); } catch { }
             mediaStreamRef.current = null;
 
-            // ② 録音時間（ms → 秒）を計算（★ここで定義する）
+            // ノードを切る（次回のため）
+            try { micSourceRef.current?.disconnect(); } catch { }
+            try { micGainRef.current?.disconnect(); } catch { }
+            try { sysGainRef.current?.disconnect(); } catch { }
+            micSourceRef.current = null;
+            micGainRef.current = null;
+            sysGainRef.current = null;
+            mixDestRef.current = null;
+
             const endTs = Date.now();
             const startTs = recordStartTsRef.current;
-            const durationMs =
-              typeof startTs === "number" ? Math.max(0, endTs - startTs) : null;
+            const durationMs = typeof startTs === "number" ? Math.max(0, endTs - startTs) : null;
 
-            // ③ blob生成
             const blob = new Blob(chunksRef.current, { type: rec.mimeType || "audio/webm" });
             chunksRef.current = [];
 
-            // ④ upload（aborted/completed を meta に）
             await uploadAudioBlob(blob, {
               participant,
               trialNo: trialIndex + 1,
               status: recordStatusRef.current,
               startTs: startTs ?? null,
               endTs,
-              durationMs, // ★ファイル名に使う用
+              durationMs,
             });
 
             recorderRef.current = null;
           } catch (e) {
             console.warn("rec.onstop failed", e);
           } finally {
-            resolve();                    // ★ここが命
+            resolve();
             recordStopPromiseRef.current = null;
           }
         };
       });
 
       rec.start(1000);
-
-
     } catch (e) {
       console.warn("startRecording failed", e);
     }
   }, [uploadAudioBlob]);
+
+
 
   const startSpeech = useCallback(() => {
     const SR = getSpeechRecognition();
@@ -563,6 +647,7 @@ export default function Task() {
 
   // ===== 質問音声再生 =====
   const questionAudioRef = useRef(null);
+  const questionNodeRef = useRef(null);
   const questionTimerRef = useRef(null);
   const QUESTION_DELAY_MS = 10000; // ★ beep から 6秒後に質問音声再生
 
@@ -620,10 +705,13 @@ export default function Task() {
           window.clearTimeout(questionTimerRef.current);
           questionTimerRef.current = null;
         }
-        if (questionAudioRef.current) {
-          questionAudioRef.current.pause();
-          questionAudioRef.current = null;
+        // ★既存WebAudio再生があれば止める
+        if (questionNodeRef.current) {
+          try { questionNodeRef.current.stop(); } catch { }
+          questionNodeRef.current = null;
         }
+
+
       }
 
 
@@ -861,7 +949,7 @@ export default function Task() {
       }
 
       triggerTimerRef.current = window.setTimeout(() => {
-        beep({ durationMs: 220, freq: 1000, gain: 0.35 });
+        beep({ durationMs: 220, freq: 1000, gain: 0.35, toMix: sysGainRef.current, });
         // ★beep回数
         beepCountRef.current += 1;
 
@@ -894,10 +982,15 @@ export default function Task() {
             // 質問音声ファイルを再生
             const audioUrl = `/m1_project/app/public/questionAudio/${questionName}.mp3`;
 
+            playQuestionAudio(audioUrl).catch((e) => {
+              console.warn("Failed to play question audio (WebAudio)", { questionName, url: audioUrl, error: e });
+            });
+
             if (questionAudioRef.current) {
-              questionAudioRef.current.pause();
+              try { questionAudioRef.current.pause?.(); } catch { }
               questionAudioRef.current = null;
             }
+
 
             const audio = new Audio(audioUrl);
             questionAudioRef.current = audio;
