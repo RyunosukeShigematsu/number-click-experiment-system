@@ -158,8 +158,8 @@ function getSpeechRecognition() {
 
 
 export default function Task() {
-  const TOTAL = 50;
-  const COLS = 10;
+  const TOTAL = 10;
+  const COLS = 5;
   const GAP = 10;
   // const CARRY_MARGIN = 10; // ★終わりの何個前から持ち越しにするか（後で調整）
 
@@ -170,6 +170,8 @@ export default function Task() {
   const rows = Math.ceil(TOTAL / COLS);
 
   const [trialIndex, setTrialIndex] = useState(0); // 0-based（何トライアル目か）
+
+  const suppressMediaStopRef = useRef(false); // ★次トライアルへ等では止めない
 
   // グローバルに秒数を消費するポインタ（0-based）
   const [globalTrigPtr, setGlobalTrigPtr] = useState(0);
@@ -184,6 +186,9 @@ export default function Task() {
   const chunksRef = useRef([]);
 
   const recordStartTsRef = useRef(null);
+
+  const [endUnlocked, setEndUnlocked] = useState(false);
+  const endUnlockTimerRef = useRef(null);
 
   // ===== Task click log (per trial) =====
   // const taskLogRef = useRef([]);          // click events
@@ -207,6 +212,16 @@ export default function Task() {
     state?.participant ??
     sessionStorage.getItem("participant") ??
     "unknown";
+
+
+  const [allHistory, setAllHistory] = useState(() => {
+    try {
+      const raw = sessionStorage.getItem(`allHistory:${participant}`);
+      return raw ? JSON.parse(raw) : [];
+    } catch {
+      return [];
+    }
+  });
 
   // ===== TaskLog: events を貯める =====
   const taskEventsRef = useRef([]);
@@ -266,6 +281,21 @@ export default function Task() {
       sessionStorage.setItem("participant", state.participant);
     }
   }, [state?.participant]);
+
+  useEffect(() => {
+    try {
+      sessionStorage.setItem(`allHistory:${participant}`, JSON.stringify(allHistory));
+    } catch { }
+  }, [participant, allHistory]);
+
+  useEffect(() => {
+    try {
+      const raw = sessionStorage.getItem(`allHistory:${participant}`);
+      setAllHistory(raw ? JSON.parse(raw) : []);
+    } catch {
+      setAllHistory([]);
+    }
+  }, [participant]);
 
 
   // ---- Task() 内に置く（participant 定義の後あたり）----
@@ -534,7 +564,7 @@ export default function Task() {
   // ===== 質問音声再生 =====
   const questionAudioRef = useRef(null);
   const questionTimerRef = useRef(null);
-  const QUESTION_DELAY_MS = 46000; // ★ beep から 6秒後に質問音声再生
+  const QUESTION_DELAY_MS = 10000; // ★ beep から 6秒後に質問音声再生
 
 
   // ===== 配置（シャッフル） =====
@@ -579,21 +609,23 @@ export default function Task() {
 
   useEffect(() => {
     return () => {
-      // ★遅延中のビープ/送信を止める
-      if (triggerTimerRef.current) {
-        window.clearTimeout(triggerTimerRef.current);
-        triggerTimerRef.current = null;
+      // ★中断（離脱）するときだけ止める
+      if (isLeavingRef.current) {
+        if (triggerTimerRef.current) {
+          window.clearTimeout(triggerTimerRef.current);
+          triggerTimerRef.current = null;
+        }
+
+        if (questionTimerRef.current) {
+          window.clearTimeout(questionTimerRef.current);
+          questionTimerRef.current = null;
+        }
+        if (questionAudioRef.current) {
+          questionAudioRef.current.pause();
+          questionAudioRef.current = null;
+        }
       }
 
-      // ★ 質問音声も停止
-      if (questionTimerRef.current) {
-        window.clearTimeout(questionTimerRef.current);
-        questionTimerRef.current = null;
-      }
-      if (questionAudioRef.current) {
-        questionAudioRef.current.pause();
-        questionAudioRef.current = null;
-      }
 
       // ★本当に離脱する時だけ aborted 扱いにする
       if (!isLeavingRef.current) return;
@@ -626,6 +658,19 @@ export default function Task() {
           },
           events: taskEventsRef.current.filter(e => e.type === "click" || e.type === "beep"),
         });
+
+        // ★ 全履歴に aborted を追加（離脱ケース）
+        setAllHistory((prev) => [
+          ...prev,
+          {
+            timeMs: end - (trialStartAtRef.current ?? z),
+            miss: missCountRef.current,
+            status: "aborted",
+            trialNo: trialIndexRef.current + 1,
+            progress,
+          },
+        ]);
+
 
         uploadTextLog({
           meta: {
@@ -691,27 +736,22 @@ export default function Task() {
     setElapsedMs(null);
     setMissCount(0);
 
+    // ★最後のトリガー後は endUnlocked 待ちを維持したいので、ここで消さない
+    if (!allTriggersConsumed) {
+      setEndUnlocked(false);
+      if (endUnlockTimerRef.current) {
+        window.clearTimeout(endUnlockTimerRef.current);
+        endUnlockTimerRef.current = null;
+      }
+    }
+
+
     // 念のためまだ録音中なら止める（通常は既に止まってる）
     // recordStatusRef.current は触らない（completed/aborted の意味が崩れる）
     await stopRecording();
 
     recordStartTsRef.current = null;
 
-    // ★ 遅延中のビープ/送信が残ってたらキャンセル
-    if (triggerTimerRef.current) {
-      window.clearTimeout(triggerTimerRef.current);
-      triggerTimerRef.current = null;
-    }
-
-    // ★ 質問音声も停止
-    if (questionTimerRef.current) {
-      window.clearTimeout(questionTimerRef.current);
-      questionTimerRef.current = null;
-    }
-    if (questionAudioRef.current) {
-      questionAudioRef.current.pause();
-      questionAudioRef.current = null;
-    }
 
     // ===== task log reset (次トライアルへ向けて) =====
     taskZeroTsRef.current = null;
@@ -728,7 +768,7 @@ export default function Task() {
 
     setIsStarted(false);
 
-  }, [isCompleted, elapsedMs, missCount, trialIndex, stopRecording]);
+  }, [isCompleted, elapsedMs, missCount, trialIndex, stopRecording, allTriggersConsumed]);
 
   // ===== トライアル開始（この画面になった瞬間）=====
   useEffect(() => {
@@ -765,6 +805,40 @@ export default function Task() {
 
       // ===== 表示（TRIGGER送信）→ 遅れてビープ（前コードと同じ思想）=====
       unlockAudio();
+
+      const isLastTrigger = globalTrigPtr === TRIGGER_PLAN.length - 1;
+      if (isLastTrigger) {
+        console.log("[LAST TRIGGER FIRED]", {
+          triggerIndex: globalTrigPtr,
+          at: Date.now(),
+        });
+      }
+
+      if (isLastTrigger) {
+        // 既存タイマーがあれば消す
+        if (endUnlockTimerRef.current) {
+          window.clearTimeout(endUnlockTimerRef.current);
+          endUnlockTimerRef.current = null;
+        }
+
+        // ★希望どおり：トリガー発火から QUESTION_DELAY_MS + 20秒
+        const WAIT_MS = QUESTION_DELAY_MS + 20_000;
+
+        // ※もし「質問音声が鳴ってから20秒」にしたいなら ↓ に変える
+        // const WAIT_MS = TRIGGER_DELAY_MS + QUESTION_DELAY_MS + 20_000;
+
+        endUnlockTimerRef.current = window.setTimeout(() => {
+          console.log("[END UNLOCKED AFTER QUESTION + 20s]", {
+            at: Date.now(),
+          });
+
+          setEndUnlocked(true);
+          endUnlockTimerRef.current = null;
+        }, WAIT_MS);
+
+
+      }
+
 
       // ① まず送る（= Screen側はこの瞬間に表示開始）
       postTrigger({
@@ -827,6 +901,14 @@ export default function Task() {
 
             const audio = new Audio(audioUrl);
             questionAudioRef.current = audio;
+
+            audio.onplay = () => {
+              console.log("[LAST QUESTION PLAYED]", {
+                questionName,
+                at: Date.now(),
+              });
+            };
+
             audio.play().catch((e) => {
               console.warn("Failed to play question audio", { questionName, url: audioUrl, error: e });
             });
@@ -939,6 +1021,18 @@ export default function Task() {
 
           setElapsedMs(end - start);
 
+          setAllHistory((prev) => [
+            ...prev,
+            {
+              timeMs: end - start,
+              miss: missCount,
+              status: "completed",
+              trialNo: trialIndex + 1,
+              progress: TOTAL,
+            },
+          ]);
+
+
           recordStatusRef.current = "completed";
 
           if (!taskLogUploadedRef.current) {
@@ -998,22 +1092,15 @@ export default function Task() {
   );
 
   // ===== ベスト記録（最速）=====
+  // ※ completed のみで最速を取る（aborted を入れると途中離脱が最速扱いになる）
   const best = useMemo(() => {
-    // 候補：履歴（過去）
-    const candidates = [...history];
-
-    // 候補：今回（完了してるなら追加）
-    if (isCompleted && elapsedMs != null) {
-      candidates.push({ timeMs: elapsedMs, miss: missCount });
-    }
-
+    const candidates = allHistory.filter((r) => r.status === "completed");
     if (candidates.length === 0) return null;
 
-    // timeMs が最小のものを返す
     return candidates.reduce((bestSoFar, cur) => {
       return cur.timeMs < bestSoFar.timeMs ? cur : bestSoFar;
     });
-  }, [history, isCompleted, elapsedMs, missCount]);
+  }, [allHistory]);
 
 
 
@@ -1059,6 +1146,18 @@ export default function Task() {
                 const start = trialStartAt ?? z;
 
                 const progress = Math.max(0, nextNumberRef.current - 1);
+
+                // ★ 全履歴に aborted を追加（時間は「開始→中断」）
+                setAllHistory((prev) => [
+                  ...prev,
+                  {
+                    timeMs: end - start,
+                    miss: missCountRef.current,
+                    status: "aborted",
+                    trialNo: trialIndexRef.current + 1,
+                    progress,
+                  },
+                ]);
 
                 await uploadTaskLog({
                   meta: {
@@ -1228,21 +1327,25 @@ export default function Task() {
                 type="button"
                 className="next-trial-button"
                 onClick={async () => {
+                  suppressMediaStopRef.current = true; // ★次へでは止めない
                   recordStatusRef.current = "completed";
                   stopSpeech();
                   await stopRecording();
 
-                  if (!allTriggersConsumed) {
-                    await resetTrial();   // resetTrial内でstopRecordingしててもOK（2回目は何もしない）
+                  // ★ここが重要：
+                  // 終了できるのは「全トリガー消費」かつ「質問+20秒経過」の時だけ
+                  if (allTriggersConsumed && endUnlocked) {
+                    await new Promise((r) => setTimeout(r, 800));
+                    navigate("/Completed", { replace: true });
                     return;
                   }
 
-                  // ★終了：Completed画面へ
-                  await new Promise((r) => setTimeout(r, 800));
-                  navigate("/Completed", { replace: true });
+                  // ★それ以外（質問前 / 質問+20秒前 / そもそも未消費）は次トライアルへ
+                  await resetTrial();
+                  suppressMediaStopRef.current = false;
                 }}
               >
-                {allTriggersConsumed ? "終了" : "次のトライアルへ"}
+                {(allTriggersConsumed && endUnlocked) ? "終了" : "次のトライアルへ"}
               </button>
             )}
 
