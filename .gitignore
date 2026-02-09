@@ -1,1 +1,5 @@
 .DS_Store
+
+# Ignore real API implementations
+server/api/*.php
+!server/api/*_sample.php
