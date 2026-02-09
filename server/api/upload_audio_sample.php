@@ -9,9 +9,7 @@ date_default_timezone_set('Asia/Tokyo');
  * 本番で不要なら、このブロックごと消してOK
  */
 $allowedOrigins = [
-  'http://localhost:5173',
-  'http://127.0.0.1:5173',
-  'https://shigematsu.nkmr.io',
+  'https://YOUR_DOMAIN.example',
 ];
 
 $origin = $_SERVER['HTTP_ORIGIN'] ?? '';
