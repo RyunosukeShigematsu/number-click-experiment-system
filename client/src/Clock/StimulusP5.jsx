@@ -23,14 +23,24 @@ export default function StimulusP5({
     if (!hostRef.current) return;
 
     const sketch = (p) => {
-      const BASE_SIZE = 72;
-      const BIG_SIZE = 108; // ← 強調サイズ（調整可）
+      const BASE_SIZE = 70;
+      const BIG_SIZE = BASE_SIZE * 1.5; // ← 強調サイズ（調整可）
+
+      // ★ time 用の内部状態
+      let currentRight = right;
+      let lastTick = 0;
+
 
       p.setup = () => {
         p.createCanvas(width, height);
         p.noStroke();
         p.textAlign(p.CENTER, p.CENTER);
         p.textFont("monospace");
+        // ★ 初期化（props が文字列なので number に）
+        if (type === "time") {
+          currentRight = Number(right);
+          lastTick = p.millis();
+        }
       };
 
       p.draw = () => {
@@ -46,29 +56,66 @@ export default function StimulusP5({
         p.fill(255);
         p.noStroke();
 
+        // ===== 1秒ごとに left を増やす =====
+        if (type === "time") {
+          const now = p.millis();
+          if (now - lastTick >= 1000) {
+            currentRight += 1;
+            lastTick += 1000;
+          }
+        }
+
         const centerX = width / 2;
         const centerY = height / 2;
 
         // X位置
-        const leftX = width * 0.27;
-        const rightX = width * 0.73;
+        const leftX = width * 0.33;
+        const rightX = width * 0.67;
+
+        // ★ Y位置：強調時は中央、非強調時は下げる
+        const offsetY = 8; // ★ 下げる量を調整可能
+        const leftY = emphasize === "right" ? centerY + offsetY : centerY;
+        const rightY = emphasize === "left" ? centerY + offsetY : centerY;
+
+        // ★ ":"のX軸オフセット（強調側に寄せる）
+        const colonOffsetX = 5; // ★ ずらす量を調整可能
+        let colonX = centerX;
+        if (emphasize === "left") {
+          colonX = centerX + colonOffsetX; // 左に寄せる
+        } else if (emphasize === "right") {
+          colonX = centerX - colonOffsetX; // 右に寄せる
+        }
+
+        // ★ ":"のY位置：強調側に合わせる
+        const colonOffsetY = 5; // ★ ずらす量を調整可能
+        let colonY = centerY - 5;
+        if (emphasize === "left") {
+          colonY = centerY + colonOffsetY; // 左と同じ高さ
+        } else if (emphasize === "right") {
+          colonY = centerY + colonOffsetY; // 右と同じ高さ
+        }
 
         // ===== 左文字 =====
         p.textSize(
           emphasize === "left" ? BIG_SIZE : BASE_SIZE
         );
-        p.text(left, leftX, centerY);
+        p.text(left, leftX, leftY);
 
         // ===== 右文字 =====
         p.textSize(
           emphasize === "right" ? BIG_SIZE : BASE_SIZE
         );
-        p.text(right, rightX, centerY);
-
+        p.text(
+          type === "time"
+            ? String(currentRight).padStart(2, "0")
+            : right,
+          rightX,
+          rightY
+        );
         // ===== ":"（時刻のみ・サイズは常にベース）=====
         if (type === "time") {
           p.textSize(BASE_SIZE);
-          p.text(":", centerX, centerY);
+          p.text(":", colonX, colonY);
         }
       };
     };

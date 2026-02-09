@@ -26,6 +26,8 @@ export default function StimulusScreen({
   // ★ 追加：表示中フラグ（true=刺激表示、false=黒画面）
   const [showStimulus, setShowStimulus] = useState(false);
 
+  const showRef = useRef(false); // ★追加：ロジック用（安定）
+
   // ★ 追加：3秒タイマー管理（連打/アンマウント対策）
   const timerRef = useRef(null);
 
@@ -58,9 +60,11 @@ export default function StimulusScreen({
 
 
   // いまの「クリックで表示」を関数化：TRIGGERでも手動でも同じ挙動
+  const DISPLAY_MS = 3000; // ★4秒表示
+
   const playOnce = useCallback((nextStimulus) => {
     // 表示中ならキューに積む
-    if (showStimulus) {
+    if (showRef.current) {
       if (nextStimulus) pendingRef.current.push(nextStimulus);
       return;
     }
@@ -68,19 +72,25 @@ export default function StimulusScreen({
     // 表示する刺激を確定
     if (nextStimulus) setStimulus(nextStimulus);
 
+    // 表示開始
+    showRef.current = true;
     setShowStimulus(true);
 
     clearTimer();
     timerRef.current = window.setTimeout(() => {
+      // 表示終了
       setShowStimulus(false);
+      showRef.current = false;
       timerRef.current = null;
 
+      // 次があれば続けて表示
       const next = pendingRef.current.shift();
       if (next) {
         window.setTimeout(() => playOnce(next), 50);
       }
-    }, 4000);
-  }, [showStimulus]);
+    }, DISPLAY_MS);
+  }, []); // ★依存なしで安定
+
 
   function getFsEl() {
     return (
@@ -171,6 +181,15 @@ export default function StimulusScreen({
         for (const ev of events) {
           if (ev?.type === "TRIGGER") {
             const k = Number(ev.triggerIndex);
+
+            // ★ 確認用ログ
+            console.log("[TRIGGER received]", {
+              event: ev,
+              triggerIndex: k,
+              stimulus: STIMULUS_PLAN?.[k],
+              at: new Date().toISOString(),
+            });
+
             if (!Number.isInteger(k) || k < 0) continue;
 
             const item = STIMULUS_PLAN?.[k] ?? null;
@@ -187,8 +206,31 @@ export default function StimulusScreen({
     };
 
     const loop = async () => {
-      // ★ 起動時：過去分を消化（再生しない）
+      // ★ Screenを開いた瞬間に、このroomの過去イベントを全部消す
+      try {
+        await fetch(EVENTS_URL, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            roomId: ROOM_ID,
+            type: "RESET",
+            from: "screen",
+          }),
+        });
+        // クライアント側の既読位置もリセット
+        lastIdRef.current = 0;
+        pendingRef.current = [];
+        clearTimer();
+        setShowStimulus(false);
+        showRef.current = false;
+
+      } catch (e) {
+        console.warn("RESET failed", e);
+      }
+
+      // ★ 念のため：起動時に過去分を消化（再生しない）
       await tick({ skipPlay: true });
+      console.log("[boot] lastId set to", lastIdRef.current);
 
       // ★ 以降は新着だけ再生
       while (alive) {
@@ -196,6 +238,8 @@ export default function StimulusScreen({
         await new Promise((r) => setTimeout(r, POLL_MS));
       }
     };
+
+
 
     loop();
     return () => {

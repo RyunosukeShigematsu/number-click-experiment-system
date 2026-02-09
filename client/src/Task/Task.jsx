@@ -9,6 +9,8 @@ const EVENTS_URL = "https://shigematsu.nkmr.io/m1_project/api/events.php";
 const AUDIO_UPLOAD_URL = "https://shigematsu.nkmr.io/m1_project/api/upload_audio.php";
 const TASKLOG_UPLOAD_URL = "https://shigematsu.nkmr.io/m1_project/api/upload_tasklog.php";
 const TEXTLOG_UPLOAD_URL = "https://shigematsu.nkmr.io/m1_project/api/upload_textlog.php";
+const QUESTION_CLIP_UPLOAD_URL = "https://shigematsu.nkmr.io/m1_project/api/upload_question_clip.php";
+
 
 
 
@@ -60,11 +62,10 @@ async function unlockAudio() {
   }
 }
 
-function beep({ durationMs = 120, freq = 880, gain = 0.12 } = {}) {
+function beep({ durationMs = 120, freq = 880, gain = 0.12, toMix = null } = {}) {
   const ctx = ensureAudio();
   if (!ctx) return;
 
-  // 念のため（環境によっては必要）
   if (ctx.state === "suspended") ctx.resume().catch(() => { });
 
   const t0 = ctx.currentTime;
@@ -79,7 +80,14 @@ function beep({ durationMs = 120, freq = 880, gain = 0.12 } = {}) {
   g.gain.exponentialRampToValueAtTime(0.0001, t0 + durationMs / 1000);
 
   osc.connect(g);
+
+  // ① いつも通りスピーカーへ
   g.connect(ctx.destination);
+
+  // ② 追加：録音ミックスへ（あれば）
+  if (toMix) {
+    try { g.connect(toMix); } catch { }
+  }
 
   osc.start(t0);
   osc.stop(t0 + durationMs / 1000 + 0.02);
@@ -88,6 +96,7 @@ function beep({ durationMs = 120, freq = 880, gain = 0.12 } = {}) {
     try { osc.disconnect(); g.disconnect(); } catch { }
   };
 }
+
 
 
 // ===== Fullscreen =====
@@ -158,10 +167,10 @@ function getSpeechRecognition() {
 
 
 export default function Task() {
-  const TOTAL = 15;
-  const COLS = 5;
+  const TOTAL = 50;
+  const COLS = 10;
   const GAP = 10;
-  const CARRY_MARGIN = 5; // ★終わりの何個前から持ち越しにするか（後で調整）
+  // const CARRY_MARGIN = 10; // ★終わりの何個前から持ち越しにするか（後で調整）
 
   const navigate = useNavigate();
 
@@ -170,6 +179,8 @@ export default function Task() {
   const rows = Math.ceil(TOTAL / COLS);
 
   const [trialIndex, setTrialIndex] = useState(0); // 0-based（何トライアル目か）
+
+  const suppressMediaStopRef = useRef(false); // ★次トライアルへ等では止めない
 
   // グローバルに秒数を消費するポインタ（0-based）
   const [globalTrigPtr, setGlobalTrigPtr] = useState(0);
@@ -183,7 +194,20 @@ export default function Task() {
   const recorderRef = useRef(null);
   const chunksRef = useRef([]);
 
+
+  // ===== Internal Mix (mic + app sounds) =====
+  const mixDestRef = useRef(null);        // MediaStreamDestination
+  const micSourceRef = useRef(null);      // MediaStreamSource
+  const sysGainRef = useRef(null);        // app sounds gain（beep/question）
+  const micGainRef = useRef(null);        // mic gain（必要なら）
+  const questionBufRef = useRef(new Map()); // (optional) decoded AudioBuffer cache
+
+
+
   const recordStartTsRef = useRef(null);
+
+  const [endUnlocked, setEndUnlocked] = useState(false);
+  const endUnlockTimerRef = useRef(null);
 
   // ===== Task click log (per trial) =====
   // const taskLogRef = useRef([]);          // click events
@@ -192,13 +216,10 @@ export default function Task() {
 
   const isLeavingRef = useRef(false);
 
-  // ★持ち越しが発生したら、このトライアル中はトリガー処理を止める
-  const [carryPending, setCarryPending] = useState(false);
-
   const hasStartedRef = useRef(false);
 
   // ★即時に止めたいので ref でも持つ（setState反映待ちの隙間を潰す）
-  const carryPendingRef = useRef(false);
+  // const carryPendingRef = useRef(false);
 
   const allTriggersConsumed = globalTrigPtr >= TRIGGER_PLAN.length;
 
@@ -210,6 +231,16 @@ export default function Task() {
     state?.participant ??
     sessionStorage.getItem("participant") ??
     "unknown";
+
+
+  const [allHistory, setAllHistory] = useState(() => {
+    try {
+      const raw = sessionStorage.getItem(`allHistory:${participant}`);
+      return raw ? JSON.parse(raw) : [];
+    } catch {
+      return [];
+    }
+  });
 
   // ===== TaskLog: events を貯める =====
   const taskEventsRef = useRef([]);
@@ -269,6 +300,21 @@ export default function Task() {
       sessionStorage.setItem("participant", state.participant);
     }
   }, [state?.participant]);
+
+  useEffect(() => {
+    try {
+      sessionStorage.setItem(`allHistory:${participant}`, JSON.stringify(allHistory));
+    } catch { }
+  }, [participant, allHistory]);
+
+  useEffect(() => {
+    try {
+      const raw = sessionStorage.getItem(`allHistory:${participant}`);
+      setAllHistory(raw ? JSON.parse(raw) : []);
+    } catch {
+      setAllHistory([]);
+    }
+  }, [participant]);
 
 
   // ---- Task() 内に置く（participant 定義の後あたり）----
@@ -332,74 +378,234 @@ export default function Task() {
     }
   }, []);
 
+  const playQuestionAudio = useCallback(async (url) => {
+    const ctx = ensureAudio();
+    if (!ctx) throw new Error("AudioContext not available");
+    if (ctx.state === "suspended") await ctx.resume().catch(() => { });
 
-  const startRecording = useCallback(async ({ participant, trialIndex }) => {
+    // 既存再生があれば止める
+    if (questionAudioRef.current) {
+      try { questionAudioRef.current.stop?.(); } catch { }
+      questionAudioRef.current = null;
+    }
+
+    // fetch → decode（キャッシュすると軽い）
+    let buf = questionBufRef.current.get(url);
+    if (!buf) {
+      const res = await fetch(url);
+      const arr = await res.arrayBuffer();
+      buf = await ctx.decodeAudioData(arr);
+      questionBufRef.current.set(url, buf);
+    }
+
+    const src = ctx.createBufferSource();
+    src.buffer = buf;
+
+    // 録音ミックスにも出す（あれば）
+    const sysGain = sysGainRef.current;
+    if (sysGain) src.connect(sysGain);
+
+    src.start();
+    questionNodeRef.current = src;
+
+    src.onended = () => {
+      if (questionNodeRef.current === src) questionNodeRef.current = null;
+    };
+
+  }, []);
+
+  const uploadQuestionClipBlob = useCallback(async (blob, meta) => {
     try {
-      const cur = recorderRef.current;
-      if (cur && cur.state !== "inactive") return; // recording / paused は全部弾く
+      const fd = new FormData();
+      fd.append("audio", blob, "question_clip.webm");
+      fd.append("meta", JSON.stringify(meta));
 
+      const res = await fetch(QUESTION_CLIP_UPLOAD_URL, { method: "POST", body: fd });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) console.warn("uploadQuestionClipBlob not ok", res.status, json);
+    } catch (e) {
+      console.warn("uploadQuestionClipBlob failed", e);
+    }
+  }, []);
 
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      mediaStreamRef.current = stream;
+  const clipRecRef = useRef(null);
+  const clipChunksRef = useRef([]);
+  const clipBusyRef = useRef(false);
 
-      chunksRef.current = [];
+  const recordQuestionClip = useCallback(async ({
+    participant,
+    triggerIndex,        // globalTrigPtr（0-based）
+    questionName,
+    windowStartRelMs = -1000,
+    windowEndRelMs = 20000,
+  }) => {
+    // 二重起動防止
+    if (clipBusyRef.current) return;
+    clipBusyRef.current = true;
+
+    try {
+      const ctx = ensureAudio();
+      if (!ctx) throw new Error("AudioContext not available");
+      if (ctx.state === "suspended") await ctx.resume().catch(() => { });
+
+      const dest = mixDestRef.current;
+      if (!dest?.stream) {
+        console.warn("recordQuestionClip: mixDest not ready");
+        return;
+      }
+
       const mimeType = pickAudioMimeType();
+      const rec = new MediaRecorder(dest.stream, mimeType ? { mimeType } : undefined);
 
-      const rec = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
-      recorderRef.current = rec;
+      clipRecRef.current = rec;
+      clipChunksRef.current = [];
 
-      // ★追加：録音開始時刻（epoch ms）
-      recordStartTsRef.current = Date.now();
+      const clipStartTs = Date.now();
 
-      rec.ondataavailable = (e) => {
-        if (e.data && e.data.size > 0) chunksRef.current.push(e.data);
-      };
-
-      // ★ Promiseをセット（stopRecordingがawaitできるように）
-      recordStopPromiseRef.current = new Promise((resolve) => {
+      const stopPromise = new Promise((resolve) => {
+        rec.ondataavailable = (e) => {
+          if (e.data && e.data.size > 0) clipChunksRef.current.push(e.data);
+        };
         rec.onstop = async () => {
           try {
-            // ① mic停止
-            try { mediaStreamRef.current?.getTracks()?.forEach((t) => t.stop()); } catch { }
-            mediaStreamRef.current = null;
+            const clipEndTs = Date.now();
+            const blob = new Blob(clipChunksRef.current, { type: rec.mimeType || "audio/webm" });
+            clipChunksRef.current = [];
 
-            // ② 録音時間（ms → 秒）を計算（★ここで定義する）
-            const endTs = Date.now();
-            const startTs = recordStartTsRef.current;
-            const durationMs =
-              typeof startTs === "number" ? Math.max(0, endTs - startTs) : null;
-
-            // ③ blob生成
-            const blob = new Blob(chunksRef.current, { type: rec.mimeType || "audio/webm" });
-            chunksRef.current = [];
-
-            // ④ upload（aborted/completed を meta に）
-            await uploadAudioBlob(blob, {
+            await uploadQuestionClipBlob(blob, {
               participant,
-              trialNo: trialIndex + 1,
-              status: recordStatusRef.current,
-              startTs: startTs ?? null,
-              endTs,
-              durationMs, // ★ファイル名に使う用
+              index: triggerIndex,          // ★ PHPが読むのは index
+              question: questionName,       // ★ PHPが読むのは question
+              clipStartTs,
+              clipEndTs,
+              durationMs: Math.max(0, clipEndTs - clipStartTs),
+              windowStartRelMs,
+              windowEndRelMs,
             });
-
-            recorderRef.current = null;
           } catch (e) {
-            console.warn("rec.onstop failed", e);
+            console.warn("clip rec.onstop failed", e);
           } finally {
-            resolve();                    // ★ここが命
-            recordStopPromiseRef.current = null;
+            clipRecRef.current = null;
+            resolve();
           }
         };
       });
+ 
+      rec.start(); // timeslice不要（短いので）
+      const clipLenMs = (windowEndRelMs - windowStartRelMs); // 16000ms想定
+      window.setTimeout(() => {
+        try {
+          if (rec.state !== "inactive") rec.stop();
+        } catch { }
+      }, clipLenMs);
 
-      rec.start(1000);
-
-
+      await stopPromise;
     } catch (e) {
-      console.warn("startRecording failed", e);
+      console.warn("recordQuestionClip failed", e);
+    } finally {
+      clipBusyRef.current = false;
     }
-  }, [uploadAudioBlob]);
+  }, [uploadQuestionClipBlob]);
+
+const ensureAudioGraph = useCallback(async () => {
+  const ctx = ensureAudio();
+  if (!ctx) throw new Error("AudioContext not available");
+  if (ctx.state === "suspended") await ctx.resume().catch(() => {});
+
+  // もうdestがあるなら再利用（ここが命）
+  if (mixDestRef.current?.stream && sysGainRef.current && micSourceRef.current) return;
+
+  // まだマイク取ってなければ取る（1回だけ）
+  if (!mediaStreamRef.current) {
+    const micStream = await navigator.mediaDevices.getUserMedia({
+      audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false }
+    });
+    mediaStreamRef.current = micStream;
+  }
+
+  // destination（録音用ミックス）を作って保持
+  const dest = ctx.createMediaStreamDestination();
+  mixDestRef.current = dest;
+
+  // mic → micGain → dest
+  const micSrc = ctx.createMediaStreamSource(mediaStreamRef.current);
+  micSourceRef.current = micSrc;
+
+  const micGain = ctx.createGain();
+  micGain.gain.value = 1.0;
+  micGainRef.current = micGain;
+
+  micSrc.connect(micGain);
+  micGain.connect(dest);
+
+  // app sounds → sysGain → dest
+  const sysGain = ctx.createGain();
+  sysGain.gain.value = 0.5;
+  sysGainRef.current = sysGain;
+  sysGain.connect(dest);
+}, []);
+
+
+  const startRecording = useCallback(async ({ participant, trialIndex }) => {
+  try {
+    const cur = recorderRef.current;
+    if (cur && cur.state !== "inactive") return;
+
+    await ensureAudioGraph(); // ★ここが重要
+
+    const dest = mixDestRef.current;
+    if (!dest?.stream) {
+      console.warn("startRecording: mixDest not ready");
+      return;
+    }
+
+    chunksRef.current = [];
+    const mimeType = pickAudioMimeType();
+    const rec = new MediaRecorder(dest.stream, mimeType ? { mimeType } : undefined);
+    recorderRef.current = rec;
+
+    recordStartTsRef.current = Date.now();
+
+    rec.ondataavailable = (e) => {
+      if (e.data && e.data.size > 0) chunksRef.current.push(e.data);
+    };
+
+    recordStopPromiseRef.current = new Promise((resolve) => {
+      rec.onstop = async () => {
+        try {
+          const endTs = Date.now();
+          const startTs = recordStartTsRef.current;
+          const durationMs = typeof startTs === "number" ? Math.max(0, endTs - startTs) : null;
+
+          const blob = new Blob(chunksRef.current, { type: rec.mimeType || "audio/webm" });
+          chunksRef.current = [];
+
+          await uploadAudioBlob(blob, {
+            participant,
+            trialNo: trialIndex + 1,
+            status: recordStatusRef.current,
+            startTs: startTs ?? null,
+            endTs,
+            durationMs,
+          });
+        } catch (e) {
+          console.warn("rec.onstop failed", e);
+        } finally {
+          recorderRef.current = null;
+          recordStopPromiseRef.current = null;
+          resolve();
+        }
+      };
+    });
+
+    rec.start(1000);
+  } catch (e) {
+    console.warn("startRecording failed", e);
+  }
+}, [ensureAudioGraph, uploadAudioBlob]);
+
+
+
 
   const startSpeech = useCallback(() => {
     const SR = getSpeechRecognition();
@@ -448,6 +654,20 @@ export default function Task() {
     }
   }, [pushTextEvent]);
 
+    const hardStopAudioGraph = useCallback(() => {
+    try { mediaStreamRef.current?.getTracks()?.forEach((t) => t.stop()); } catch { }
+    mediaStreamRef.current = null;
+
+    try { micSourceRef.current?.disconnect(); } catch { }
+    try { micGainRef.current?.disconnect(); } catch { }
+    try { sysGainRef.current?.disconnect(); } catch { }
+
+    micSourceRef.current = null;
+    micGainRef.current = null;
+    sysGainRef.current = null;
+    mixDestRef.current = null;
+  }, []);
+
   const stopSpeech = useCallback(() => {
     speechActiveRef.current = false;
     const rec = speechRecRef.current;
@@ -457,18 +677,24 @@ export default function Task() {
     speechRecRef.current = null;
   }, []);
 
-
-  const stopRecording = useCallback(async () => {
+  const stopRecording = useCallback(async ({ hard = false } = {}) => {
     try {
       const rec = recorderRef.current;
-      if (!rec) return;
+      if (!rec) {
+        if (hard) hardStopAudioGraph();
+        return;
+      }
       const p = recordStopPromiseRef.current;
-      if (rec.state !== "inactive") rec.stop(); // recording / paused をまとめて止める
-      if (p) await p; // ★ ここが重要
+      if (rec.state !== "inactive") rec.stop();
+      if (p) await p;
+
+      // ★ここでだけ“完全停止”
+      if (hard) hardStopAudioGraph();
     } catch (e) {
       console.warn("stopRecording failed", e);
     }
-  }, []);
+  }, [hardStopAudioGraph]);
+
 
   useEffect(() => {
     const onBeforeUnload = () => {
@@ -534,6 +760,12 @@ export default function Task() {
   const TRIGGER_DELAY_MS = 1000;      // ★ここで遅延量を調整
   const triggerTimerRef = useRef(null); // ★遅延タイマー（溜まり防止）
 
+  // ===== 質問音声再生 =====
+  const questionAudioRef = useRef(null);
+  const questionNodeRef = useRef(null);
+  const questionTimerRef = useRef(null);
+  const QUESTION_DELAY_MS = 5000; // ★ beep から 6秒後に質問音声再生
+
 
   // ===== 配置（シャッフル） =====
   const [shuffleKey, setShuffleKey] = useState(0);
@@ -577,11 +809,26 @@ export default function Task() {
 
   useEffect(() => {
     return () => {
-      // ★遅延中のビープ/送信を止める
-      if (triggerTimerRef.current) {
-        window.clearTimeout(triggerTimerRef.current);
-        triggerTimerRef.current = null;
+      // ★中断（離脱）するときだけ止める
+      if (isLeavingRef.current) {
+        if (triggerTimerRef.current) {
+          window.clearTimeout(triggerTimerRef.current);
+          triggerTimerRef.current = null;
+        }
+
+        if (questionTimerRef.current) {
+          window.clearTimeout(questionTimerRef.current);
+          questionTimerRef.current = null;
+        }
+        // ★既存WebAudio再生があれば止める
+        if (questionNodeRef.current) {
+          try { questionNodeRef.current.stop(); } catch { }
+          questionNodeRef.current = null;
+        }
+
+
       }
+
 
       // ★本当に離脱する時だけ aborted 扱いにする
       if (!isLeavingRef.current) return;
@@ -615,21 +862,34 @@ export default function Task() {
           events: taskEventsRef.current.filter(e => e.type === "click" || e.type === "beep"),
         });
 
-        uploadTextLog({
-  meta: {
-    participant: participantRef.current,
-    trialNo: trialIndexRef.current + 1,
-    status: "aborted",
-    elapsedMs: Date.now() - (trialStartAtRef.current ?? taskZeroTsRef.current),
-    beepCount: beepCountRef.current,
-    beepIndices: beepIndicesRef.current,
-    textCount: textCountRef.current,
-  },
-  events: textEventsRef.current,
-});
+        // ★ 全履歴に aborted を追加（離脱ケース）
+        setAllHistory((prev) => [
+          ...prev,
+          {
+            timeMs: end - (trialStartAtRef.current ?? z),
+            miss: missCountRef.current,
+            status: "aborted",
+            trialNo: trialIndexRef.current + 1,
+            progress,
+          },
+        ]);
 
-// speech停止（可能なら）
-stopSpeech();
+
+        uploadTextLog({
+          meta: {
+            participant: participantRef.current,
+            trialNo: trialIndexRef.current + 1,
+            status: "aborted",
+            elapsedMs: Date.now() - (trialStartAtRef.current ?? taskZeroTsRef.current),
+            beepCount: beepCountRef.current,
+            beepIndices: beepIndicesRef.current,
+            textCount: textCountRef.current,
+          },
+          events: textEventsRef.current,
+        });
+
+        // speech停止（可能なら）
+        stopSpeech();
 
 
 
@@ -638,7 +898,7 @@ stopSpeech();
 
       // stopRecording();
       (async () => {
-        await stopRecording();
+        await stopRecording({ hard: true });
       })();
 
     };
@@ -655,6 +915,8 @@ stopSpeech();
   // リセット：NEXTを1に戻して、配置もランダムにし直す
   const resetTrial = useCallback(async () => {
     hasStartedRef.current = false;
+    stopSpeech();          // ★追加（保険）
+    await stopRecording(); // 既にあるならそのままでOK
     // ★ 完了済みなら、今回の記録を履歴の先頭へ（最大5件）
     if (isCompleted && elapsedMs != null) {
       setHistory((prev) => {
@@ -667,7 +929,6 @@ stopSpeech();
     const nextTrial = trialIndex + 1;
 
 
-    setIsStarted(false); // ★次トライアルは開始待ちに戻す  
     setIsCompleted(false);
     setNextNumber(1);
     setShuffleKey((k) => k + 1);
@@ -678,20 +939,22 @@ stopSpeech();
     setElapsedMs(null);
     setMissCount(0);
 
+    // ★最後のトリガー後は endUnlocked 待ちを維持したいので、ここで消さない
+    if (!allTriggersConsumed) {
+      setEndUnlocked(false);
+      if (endUnlockTimerRef.current) {
+        window.clearTimeout(endUnlockTimerRef.current);
+        endUnlockTimerRef.current = null;
+      }
+    }
+
+
     // 念のためまだ録音中なら止める（通常は既に止まってる）
     // recordStatusRef.current は触らない（completed/aborted の意味が崩れる）
     await stopRecording();
 
     recordStartTsRef.current = null;
-    setTriggerBaseAt(null); // ★次の開始でセットし直す
-    setCarryPending(false); // ★追加（念のため）
-    carryPendingRef.current = false; // ★追加
 
-    // ★ 遅延中のビープ/送信が残ってたらキャンセル
-    if (triggerTimerRef.current) {
-      window.clearTimeout(triggerTimerRef.current);
-      triggerTimerRef.current = null;
-    }
 
     // ===== task log reset (次トライアルへ向けて) =====
     taskZeroTsRef.current = null;
@@ -706,7 +969,9 @@ stopSpeech();
     textSeqRef.current = 0;
     beepIndicesRef.current = [];
 
-  }, [isCompleted, elapsedMs, missCount, trialIndex, stopRecording]);
+    setIsStarted(false);
+
+  }, [isCompleted, elapsedMs, missCount, trialIndex, stopRecording, allTriggersConsumed]);
 
   // ===== トライアル開始（この画面になった瞬間）=====
   useEffect(() => {
@@ -716,21 +981,12 @@ stopSpeech();
 
     const t = Date.now();
     setTrialStartAt(t);
-    setTriggerBaseAt(t); // ★トリガー間隔の基準もtrial開始に
-
-    setCarryPending(false); // ★追加：次トライアル開始で carry解除
-    carryPendingRef.current = false; // ★追加
 
 
   }, [isStarted, trialStartAt, nextNumber]);
 
   useEffect(() => {
-    if (!isStarted) return;
     if (triggerBaseAt == null) return;
-    if (isCompleted) return;
-
-    // ★持ち越し中は、このトライアルでは鳴らさない（次トライアルで再開）
-    if (carryPendingRef.current) return;
 
 
     // 全部使い切ったら何もしない（＝この後は鳴らない）
@@ -750,17 +1006,42 @@ stopSpeech();
       const elapsedMs = Date.now() - triggerBaseAt;
       if (elapsedMs < sec * 1000) return;
 
-      // ===== 持ち越し判定（終わりのCARRY_MARGIN個前に入ってたら carry）=====
-      const shouldCarry = nextNumber > (TOTAL - CARRY_MARGIN);
-
-      if (shouldCarry) {
-        carryPendingRef.current = true; // ★まずrefで即止め
-        setCarryPending(true);          // ★UI側も止め状態に
-        return;
-      }
-
       // ===== 表示（TRIGGER送信）→ 遅れてビープ（前コードと同じ思想）=====
       unlockAudio();
+
+      const isLastTrigger = globalTrigPtr === TRIGGER_PLAN.length - 1;
+      if (isLastTrigger) {
+        console.log("[LAST TRIGGER FIRED]", {
+          triggerIndex: globalTrigPtr,
+          at: Date.now(),
+        });
+      }
+
+      if (isLastTrigger) {
+        // 既存タイマーがあれば消す
+        if (endUnlockTimerRef.current) {
+          window.clearTimeout(endUnlockTimerRef.current);
+          endUnlockTimerRef.current = null;
+        }
+
+        // ★希望どおり：トリガー発火から QUESTION_DELAY_MS + 30秒
+        const WAIT_MS = QUESTION_DELAY_MS + 30_000;
+
+        // ※もし「質問音声が鳴ってから30秒」にしたいなら ↓ に変える
+        // const WAIT_MS = TRIGGER_DELAY_MS + QUESTION_DELAY_MS + 30_000;
+
+        endUnlockTimerRef.current = window.setTimeout(() => {
+          console.log("[END UNLOCKED AFTER QUESTION + 30s]", {
+            at: Date.now(),
+          });
+
+          setEndUnlocked(true);
+          endUnlockTimerRef.current = null;
+        }, WAIT_MS);
+
+
+      }
+
 
       // ① まず送る（= Screen側はこの瞬間に表示開始）
       postTrigger({
@@ -783,7 +1064,7 @@ stopSpeech();
       }
 
       triggerTimerRef.current = window.setTimeout(() => {
-        beep({ durationMs: 220, freq: 1000, gain: 0.35 });
+        beep({ durationMs: 220, freq: 1000, gain: 0.35, toMix: sysGainRef.current, });
         // ★beep回数
         beepCountRef.current += 1;
 
@@ -801,6 +1082,61 @@ stopSpeech();
           console.log("BEEP", { beepCount: beepCountRef.current, tRelMs });
         }
         triggerTimerRef.current = null;
+
+        // ★ 質問音声を 6秒後に再生
+        if (questionTimerRef.current) {
+          window.clearTimeout(questionTimerRef.current);
+          questionTimerRef.current = null;
+        }
+
+        const trigger = TRIGGER_PLAN[globalTrigPtr];
+        const questionName = trigger?.Question ?? null;
+
+        if (questionName) {
+          // ★ クリップ録音：質問の直前1秒〜15秒後
+          const CLIP_START_DELAY = Math.max(0, QUESTION_DELAY_MS - 1000); // 直前1秒
+          window.setTimeout(() => {
+            recordQuestionClip({
+              participant,
+              triggerIndex: globalTrigPtr, // このトリガーのID（0-based）
+              questionName,
+              windowStartRelMs: -1000,
+              windowEndRelMs: 20000,
+            });
+          }, CLIP_START_DELAY);
+
+          // ★ 質問音声自体は既存どおり QUESTION_DELAY_MS で再生
+          questionTimerRef.current = window.setTimeout(() => {
+            // 質問音声ファイルを再生
+            const audioUrl = `/m1_project/app/public/questionAudio/${questionName}.mp3`;
+
+            playQuestionAudio(audioUrl).catch((e) => {
+              console.warn("Failed to play question audio (WebAudio)", { questionName, url: audioUrl, error: e });
+            });
+
+            if (questionAudioRef.current) {
+              try { questionAudioRef.current.pause?.(); } catch { }
+              questionAudioRef.current = null;
+            }
+
+
+            const audio = new Audio(audioUrl);
+            questionAudioRef.current = audio;
+
+            audio.onplay = () => {
+              console.log("[LAST QUESTION PLAYED]", {
+                questionName,
+                at: Date.now(),
+              });
+            };
+
+            audio.play().catch((e) => {
+              console.warn("Failed to play question audio", { questionName, url: audioUrl, error: e });
+            });
+
+            questionTimerRef.current = null;
+          }, QUESTION_DELAY_MS);
+        }
       }, TRIGGER_DELAY_MS);
 
 
@@ -814,16 +1150,15 @@ stopSpeech();
 
     return () => window.clearInterval(timer);
   }, [
-    isStarted,
     triggerBaseAt,
-    isCompleted,
     globalTrigPtr,
     nextNumber,
     trialIndex,
     TOTAL,
-    CARRY_MARGIN,
-    carryPending, // ★追加
   ]);
+
+
+
 
   useEffect(() => {
     const onFsChange = () => {
@@ -881,10 +1216,6 @@ stopSpeech();
         });
       }
 
-
-      // 完了後は押せない（進行しない）
-      if (isCompleted) return;
-
       if (num === nextNumber) {
         // 正解フィードバック
         setFeedback({ num, type: "correct" });
@@ -914,6 +1245,18 @@ stopSpeech();
 
           setElapsedMs(end - start);
 
+          setAllHistory((prev) => [
+            ...prev,
+            {
+              timeMs: end - start,
+              miss: missCount,
+              status: "completed",
+              trialNo: trialIndex + 1,
+              progress: TOTAL,
+            },
+          ]);
+
+
           recordStatusRef.current = "completed";
 
           if (!taskLogUploadedRef.current) {
@@ -937,8 +1280,8 @@ stopSpeech();
               events: textEventsRef.current, // ★textのみ
             });
 
-            stopSpeech();
-            await stopRecording();
+            // stopSpeech();
+            // await stopRecording();
 
 
           }
@@ -958,8 +1301,6 @@ stopSpeech();
       window.setTimeout(() => setFeedback(null), 220);
     },
     [
-      isStarted,
-      isCompleted,
       nextNumber,
       TOTAL,
       trialStartAt,
@@ -975,22 +1316,15 @@ stopSpeech();
   );
 
   // ===== ベスト記録（最速）=====
+  // ※ completed のみで最速を取る（aborted を入れると途中離脱が最速扱いになる）
   const best = useMemo(() => {
-    // 候補：履歴（過去）
-    const candidates = [...history];
-
-    // 候補：今回（完了してるなら追加）
-    if (isCompleted && elapsedMs != null) {
-      candidates.push({ timeMs: elapsedMs, miss: missCount });
-    }
-
+    const candidates = allHistory.filter((r) => r.status === "completed");
     if (candidates.length === 0) return null;
 
-    // timeMs が最小のものを返す
     return candidates.reduce((bestSoFar, cur) => {
       return cur.timeMs < bestSoFar.timeMs ? cur : bestSoFar;
     });
-  }, [history, isCompleted, elapsedMs, missCount]);
+  }, [allHistory]);
 
 
 
@@ -1019,7 +1353,7 @@ stopSpeech();
 
             // 中断扱いで止める
             recordStatusRef.current = "aborted";
-            await stopRecording();
+            await stopRecording({ hard: true });
 
             // ===== task log upload (aborted) =====
             if (!taskLogUploadedRef.current) {
@@ -1036,6 +1370,18 @@ stopSpeech();
                 const start = trialStartAt ?? z;
 
                 const progress = Math.max(0, nextNumberRef.current - 1);
+
+                // ★ 全履歴に aborted を追加（時間は「開始→中断」）
+                setAllHistory((prev) => [
+                  ...prev,
+                  {
+                    timeMs: end - start,
+                    miss: missCountRef.current,
+                    status: "aborted",
+                    trialNo: trialIndexRef.current + 1,
+                    progress,
+                  },
+                ]);
 
                 await uploadTaskLog({
                   meta: {
@@ -1127,7 +1473,7 @@ stopSpeech();
                   setNextNumber(1);
 
                   setTrialStartAt(t0);
-                  setTriggerBaseAt(t0);
+                  setTriggerBaseAt(prev => (prev == null ? t0 : prev));
 
                   setElapsedMs(null);
                   setMissCount(0);
@@ -1188,6 +1534,7 @@ stopSpeech();
                       isCorrect ? "cell--correct" : "",
                       isWrong ? "cell--wrong" : "",
                     ].filter(Boolean).join(" ")}
+                    disabled={!isStarted || isCompleted}
                     onClick={() => handleClick(num, { x, y })}
                   >
                     {isStarted ? num : ""}
@@ -1204,21 +1551,26 @@ stopSpeech();
                 type="button"
                 className="next-trial-button"
                 onClick={async () => {
-                  if (!allTriggersConsumed) {
-                    resetTrial();
+                  suppressMediaStopRef.current = true; // ★次へでは止めない
+                  recordStatusRef.current = "completed";
+                  stopSpeech();
+                  await stopRecording();
+
+                  // ★ここが重要：
+                  // 終了できるのは「全トリガー消費」かつ「質問+30秒経過」の時だけ
+                  if (allTriggersConsumed && endUnlocked) {
+                    await stopRecording({ hard: true });
+                    await new Promise((r) => setTimeout(r, 800));
+                    navigate("/Completed", { replace: true });
                     return;
                   }
 
-                  // ★終了：最後のトライアルは完了済みなので録音も基本止まってるはずだが念のため
-                  recordStatusRef.current = "completed";
-                  await stopRecording();
-                  await new Promise((r) => setTimeout(r, 800));
-
-                  // Completed画面へ
-                  navigate("/Completed", { replace: true });
+                  // ★それ以外（質問前 / 質問+30秒前 / そもそも未消費）は次トライアルへ
+                  await resetTrial();
+                  suppressMediaStopRef.current = false;
                 }}
               >
-                {allTriggersConsumed ? "終了" : "次のトライアルへ"}
+                {(allTriggersConsumed && endUnlocked) ? "終了" : "次のトライアルへ"}
               </button>
             )}
 

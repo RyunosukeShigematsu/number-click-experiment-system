@@ -47,11 +47,12 @@
 }
 
 .fs-btn {
-  position: fixed;
-  top: 16px;
-  right: 16px;   /* ★ 右上 */
-  left: auto;    /* ★ 左指定を無効化 */
-  z-index: 9999;
+  position: fixed !important;
+  top: 16px !important;
+  right: 16px !important;
+  left: auto !important;
+  bottom: auto !important;
+  z-index: 10000 !important;
 
   width: 40px;
   height: 40px;
